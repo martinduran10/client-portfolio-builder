@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Bloomberg closes stay out of the repo (data/README.md documents the format)
+data/*.csv
+data/*.parquet
+
+# Generated proposals
+examples/output/
