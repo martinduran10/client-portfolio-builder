@@ -59,8 +59,10 @@ def render_proposal(
     holdings: pd.DataFrame,
     expected_return: float,
     scenarios: pd.DataFrame,
+    drawdown: dict[str, object],
     target_usd: float,
     miss_probability: float,
+    n_paths: int,
     fx: dict[str, float] | None = None,
     as_of: date | None = None,
 ) -> str:
@@ -68,8 +70,12 @@ def render_proposal(
 
     ``scenarios`` is the table from ``stress.replay_scenarios``: one row
     per episode with its calendar-year return and peak-to-trough slide.
-    ``fx``, when given, carries ``onshore_usd``, ``offshore_usd`` and the
-    assumed ``depreciation`` used for the currency stress line.
+    ``drawdown`` is ``stress.historical_drawdown`` for the same mix.
+    ``expected_return`` is the number the Monte Carlo used and ``n_paths``
+    how many futures it drew.  ``fx``, when given, carries ``onshore_usd``,
+    ``offshore_usd``, the ``depreciation`` used for the currency stress
+    line, and optionally ``mix_return`` (the return before the currency
+    slide) with ``expected_depreciation`` (the slide per year).
     """
     as_of = as_of or date.today()
 
@@ -87,6 +93,19 @@ def render_proposal(
         f"<td class='num'>{_usd(profile.total_assets_usd * row.peak_to_trough)}</td></tr>"
         for name, row in scenarios.iterrows()
     )
+
+    return_note = "from long-run building blocks nudged for today's valuations"
+    if fx is not None and "mix_return" in fx and "expected_depreciation" in fx:
+        return_note = (
+            f"in dollars: {_pct(fx['mix_return'])} from long-run building blocks "
+            f"nudged for today's valuations, less the {_pct(fx['expected_depreciation'])} "
+            f"a year the {profile.local_currency} is expected to slide on the "
+            f"{_pct(profile.onshore_share, 0)} held onshore"
+        )
+
+    dd_start = pd.Timestamp(drawdown["window_start"]).strftime("%b %Y")
+    dd_end = pd.Timestamp(drawdown["window_end"]).strftime("%b %Y")
+    dd = float(drawdown["max_drawdown"])
 
     fx_section = ""
     if fx is not None:
@@ -124,7 +143,7 @@ bad-year loss, the {profile.horizon_years:.0f}-year horizon, and the
 {holding_rows}
 </table>
 <p>Estimated return over the next ten years: <strong>{_pct(expected_return)}</strong>
-a year, from long-run building blocks nudged for today's valuations.</p>
+a year, {return_note}.</p>
 
 <h2>If history repeated</h2>
 <table>
@@ -135,9 +154,12 @@ a year, from long-run building blocks nudged for today's valuations.</p>
 <p class="meta">Replayed on the month-end history of one ETF per asset class.
 "Full year" is the calendar-year return; "peak to trough" is the worst
 month-end-to-month-end slide inside the window shown.</p>
+<p>Worst slide of this mix on the same history, {dd_start} to {dd_end}:
+<strong class="{_sign(dd)}">{_pct(dd)}</strong> peak to trough
+({_usd(profile.total_assets_usd * dd)}).</p>
 
 <h2>Odds of missing the goal</h2>
-<p>Across 10,000 simulated futures, this mix ends below the
+<p>Across {n_paths:,} simulated futures, this mix ends below the
 {_usd(target_usd)} target in <strong>{_pct(miss_probability, 0)}</strong> of them
 after {profile.horizon_years:.0f} years.</p>
 {fx_section}

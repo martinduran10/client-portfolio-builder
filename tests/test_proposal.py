@@ -8,7 +8,7 @@ from cpb.allocation import expected_return, model_portfolio
 from cpb.implementation import to_holdings
 from cpb.profile import ClientProfile
 from cpb.proposal import render_proposal, write_proposal
-from cpb.stress import replay_scenarios
+from cpb.stress import historical_drawdown, replay_scenarios
 
 
 @pytest.fixture
@@ -29,9 +29,12 @@ def pieces():
         holdings=to_holdings(weights, profile.total_assets_usd),
         expected_return=expected_return(weights),
         scenarios=replay_scenarios(weights),
+        drawdown=historical_drawdown(weights),
         target_usd=10_000_000,
         miss_probability=0.47,
-        fx={"offshore_usd": 3_000_000, "onshore_usd": 2_000_000, "depreciation": 0.20},
+        n_paths=10_000,
+        fx={"offshore_usd": 3_000_000, "onshore_usd": 2_000_000, "depreciation": 0.20,
+            "expected_depreciation": 0.05, "mix_return": 0.0504},
         as_of=date(2026, 10, 31),
     )
 
@@ -71,3 +74,23 @@ def test_write_proposal_creates_parents(tmp_path, pieces):
     out = write_proposal(html, tmp_path / "out" / "proposal.html")
     assert out.exists()
     assert out.read_text(encoding="utf-8").startswith("<!DOCTYPE html>")
+
+
+def test_path_count_is_the_one_passed_in(pieces):
+    assert "10,000 simulated futures" in render_proposal(**pieces)
+    pieces["n_paths"] = 2_500
+    assert "2,500 simulated futures" in render_proposal(**pieces)
+
+
+def test_drawdown_line_shows_the_worst_slide(pieces):
+    html = render_proposal(**pieces)
+    dd = pieces["drawdown"]["max_drawdown"]
+    assert f"{dd * 100:.1f}%" in html
+    assert "May 2007 to" in html
+
+
+def test_return_line_explains_the_currency_slide(pieces):
+    html = render_proposal(**pieces)
+    assert "5.0% a year the COP is expected to slide on the 40% held onshore" in html
+    del pieces["fx"]["mix_return"]
+    assert "expected to slide" not in render_proposal(**pieces)

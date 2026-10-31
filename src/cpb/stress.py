@@ -13,6 +13,10 @@ from .proxies import PROXY_MAP, common_closes, load_proxies
 
 # Each episode reports two numbers: the full calendar-year return, and the
 # peak-to-trough slide inside a window of month-ends (inclusive).
+# Simulated futures in the goal-miss count; the proposal prints the number
+# actually used, so pass the same value to both.
+DEFAULT_N_PATHS = 10_000
+
 SCENARIO_WINDOWS = {
     "2008 global financial crisis": {"calendar_year": 2008, "window": ("2007-10", "2009-02")},
     "2020 covid crash": {"calendar_year": 2020, "window": ("2020-02", "2020-03")},
@@ -143,7 +147,7 @@ def goal_miss_probability(
     horizon_years: int,
     expected_return: float,
     volatility: float,
-    n_paths: int = 10_000,
+    n_paths: int = DEFAULT_N_PATHS,
     seed: int = 42,
 ) -> float:
     """Fraction of simulated futures that end below the goal.
