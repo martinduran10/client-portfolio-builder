@@ -7,6 +7,7 @@ from cpb.profile import (
     goal_level,
     horizon_level,
     loss_tolerance_level,
+    max_loss_for_level,
     risk_level,
 )
 
@@ -104,3 +105,17 @@ class TestValidation:
     def test_rejects_offshore_share_out_of_range(self):
         with pytest.raises(ValueError, match="offshore_share"):
             make_profile(offshore_share=1.2)
+
+
+class TestMaxLossForLevel:
+    def test_caps_mirror_the_bands(self):
+        assert [max_loss_for_level(l) for l in range(1, 5)] == [0.05, 0.10, 0.15, 0.25]
+        assert max_loss_for_level(5) is None
+
+    def test_round_trips_with_loss_tolerance_level(self):
+        for level in range(1, 5):
+            assert loss_tolerance_level(max_loss_for_level(level)) == level
+
+    def test_rejects_unknown_level(self):
+        with pytest.raises(ValueError, match="risk level"):
+            max_loss_for_level(0)

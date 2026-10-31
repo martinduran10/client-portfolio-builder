@@ -13,6 +13,10 @@ from dataclasses import dataclass
 # The most aggressive level each goal can justify on its own.
 GOAL_CAPS = {"preserve": 2, "income": 3, "balanced": 4, "grow": 5}
 
+# Bad-year loss a client can sit through → the level that allows.
+# Anything beyond the last band is level 5.
+LOSS_TOLERANCE_BANDS = ((0.05, 1), (0.10, 2), (0.15, 3), (0.25, 4))
+
 
 @dataclass(frozen=True)
 class ClientProfile:
@@ -69,11 +73,22 @@ def loss_tolerance_level(max_annual_loss: float) -> int:
 
     Tolerating up to 5% → 1, 10% → 2, 15% → 3, 25% → 4, more → 5.
     """
-    bands = ((0.05, 1), (0.10, 2), (0.15, 3), (0.25, 4))
-    for cap, level in bands:
+    for cap, level in LOSS_TOLERANCE_BANDS:
         if max_annual_loss <= cap:
             return level
     return 5
+
+
+def max_loss_for_level(level: int) -> float | None:
+    """The largest bad-year loss a client at this level said they could sit
+    through: 5% at level 1, 10% at 2, 15% at 3, 25% at 4; level 5 has no cap
+    (returns ``None``)."""
+    for cap, band_level in LOSS_TOLERANCE_BANDS:
+        if band_level == level:
+            return cap
+    if level == 5:
+        return None
+    raise ValueError(f"risk level must be 1-5, got {level}")
 
 
 def horizon_level(horizon_years: float) -> int:
