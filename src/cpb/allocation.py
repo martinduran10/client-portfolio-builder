@@ -52,9 +52,12 @@ TEN_YEAR_RETURNS = {
     "cash": 0.030,
 }
 
-# Long-run annual volatility of each model mix, estimated from the
-# history of that mix.  One number per level keeps the story simple.
-MODEL_VOLATILITY = {1: 0.045, 2: 0.07, 3: 0.095, 4: 0.12, 5: 0.145}
+# Annual volatility of each model mix, computed from the history of that
+# mix: standard deviation of monthly returns on the proxy ETFs in
+# data/proxies.csv over the longest window they all share (2007-06 to
+# 2026-10), times sqrt(12).  Regenerate with ``python -m cpb.calibrate``;
+# tests/test_allocation.py fails if these drift from the data.
+MODEL_VOLATILITY = {1: 0.0375, 2: 0.0654, 3: 0.0944, 4: 0.123, 5: 0.152}
 
 # The valuation nudge never moves a return estimate more than this per year.
 MAX_VALUATION_ADJUSTMENT = 0.02
