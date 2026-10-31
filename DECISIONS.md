@@ -1,5 +1,15 @@
 # Where the implementation departs from CLAUDE.md
 
+> **Status on the `sourced-data` branch (2026-10-31).** Section 4 is
+> superseded: the scenario table is now replayed from the cached proxy
+> history (see SOURCES.md section 4 and REPORT.md). Section 6 is
+> resolved: the worst slide on record is on the proposal page. In
+> section 5 the expected COP slide now lowers the onshore slice's return
+> and reaches the Monte Carlo; the onshore money is still the USD mix,
+> not local assets. Sections 1, 2, 3 and 7 stand as written; the
+> tolerance finding in section 2 is now measured by
+> `tests/test_tolerance.py` and listed in REPORT.md.
+
 CLAUDE.md gives one line per module and leaves the method open. Each
 section below names a place where the code made a choice the brief did
 not spell out, or went a different way than the brief implies, with the
