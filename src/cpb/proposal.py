@@ -43,12 +43,22 @@ def _usd(x: float) -> str:
     return f"${x:,.0f}"
 
 
+def _sign(x: float) -> str:
+    return "neg" if x < 0 else ""
+
+
+def _window(row: pd.Series) -> str:
+    start = pd.Timestamp(row.window_start).strftime("%b %Y")
+    end = pd.Timestamp(row.window_end).strftime("%b %Y")
+    return f"{start}–{end}"
+
+
 def render_proposal(
     profile: ClientProfile,
     level: int,
     holdings: pd.DataFrame,
     expected_return: float,
-    scenarios: dict[str, float],
+    scenarios: pd.DataFrame,
     target_usd: float,
     miss_probability: float,
     fx: dict[str, float] | None = None,
@@ -56,6 +66,8 @@ def render_proposal(
 ) -> str:
     """Build the one-page HTML proposal from the pieces the other modules made.
 
+    ``scenarios`` is the table from ``stress.replay_scenarios``: one row
+    per episode with its calendar-year return and peak-to-trough slide.
     ``fx``, when given, carries ``onshore_usd``, ``offshore_usd`` and the
     assumed ``depreciation`` used for the currency stress line.
     """
@@ -69,9 +81,11 @@ def render_proposal(
     )
 
     scenario_rows = "\n".join(
-        f"<tr><td>{name}</td><td class='num {'neg' if ret < 0 else ''}'>"
-        f"{_pct(ret)}</td><td class='num'>{_usd(profile.total_assets_usd * ret)}</td></tr>"
-        for name, ret in scenarios.items()
+        f"<tr><td>{name} <span class='meta'>({_window(row)})</span></td>"
+        f"<td class='num {_sign(row.calendar_year_return)}'>{_pct(row.calendar_year_return)}</td>"
+        f"<td class='num {_sign(row.peak_to_trough)}'>{_pct(row.peak_to_trough)}</td>"
+        f"<td class='num'>{_usd(profile.total_assets_usd * row.peak_to_trough)}</td></tr>"
+        for name, row in scenarios.iterrows()
     )
 
     fx_section = ""
@@ -114,9 +128,13 @@ a year, from long-run building blocks nudged for today's valuations.</p>
 
 <h2>If history repeated</h2>
 <table>
-<tr><th>Episode</th><th class="num">Portfolio</th><th class="num">In dollars</th></tr>
+<tr><th>Episode</th><th class="num">Full year</th><th class="num">Peak to trough</th>
+<th class="num">Peak to trough, dollars</th></tr>
 {scenario_rows}
 </table>
+<p class="meta">Replayed on the month-end history of one ETF per asset class.
+"Full year" is the calendar-year return; "peak to trough" is the worst
+month-end-to-month-end slide inside the window shown.</p>
 
 <h2>Odds of missing the goal</h2>
 <p>Across 10,000 simulated futures, this mix ends below the
@@ -124,7 +142,8 @@ a year, from long-run building blocks nudged for today's valuations.</p>
 after {profile.horizon_years:.0f} years.</p>
 {fx_section}
 <p class="footer">Return estimates are long-run assumptions, not promises.
-Scenario figures replay past episodes and do not predict the next one.
+Scenario figures replay past episodes on month-end data, which understates
+slides that began and ended inside a month, and do not predict the next one.
 For discussion purposes only.</p>
 </body>
 </html>

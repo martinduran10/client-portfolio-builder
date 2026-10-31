@@ -8,7 +8,7 @@ from cpb.allocation import expected_return, model_portfolio
 from cpb.implementation import to_holdings
 from cpb.profile import ClientProfile
 from cpb.proposal import render_proposal, write_proposal
-from cpb.stress import run_scenarios
+from cpb.stress import replay_scenarios
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def pieces():
         level=3,
         holdings=to_holdings(weights, profile.total_assets_usd),
         expected_return=expected_return(weights),
-        scenarios=run_scenarios(weights),
+        scenarios=replay_scenarios(weights),
         target_usd=10_000_000,
         miss_probability=0.47,
         fx={"offshore_usd": 3_000_000, "onshore_usd": 2_000_000, "depreciation": 0.20},
@@ -59,8 +59,10 @@ def test_fx_section_only_when_given(pieces):
 def test_scenario_rows_show_dollar_impact(pieces):
     html = render_proposal(**pieces)
     assert "2022 rate shock" in html
-    # Level-3 2022 loss is about -14.3% of $5M ≈ -$714k.
-    dollars = pieces["scenarios"]["2022 rate shock"] * pieces["profile"].total_assets_usd
+    assert "Jan 2022–Dec 2022" in html
+    # The dollar column is the peak-to-trough slide times the portfolio.
+    slide = pieces["scenarios"].loc["2022 rate shock", "peak_to_trough"]
+    dollars = slide * pieces["profile"].total_assets_usd
     assert f"${dollars:,.0f}" in html
 
 

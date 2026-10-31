@@ -1,5 +1,6 @@
-"""Stress tests a banker can narrate: replay three bad years, measure the
-worst historical slide, and count the simulated futures that miss the goal.
+"""Stress tests a banker can narrate: replay three bad episodes on the
+proxy ETF history, measure the worst month-end slide, and count the
+simulated futures that miss the goal.
 """
 
 from __future__ import annotations
@@ -7,48 +8,21 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-# What each asset class actually returned in three distinct bad episodes.
-# 2008: credit crisis, bonds cushioned.  2020: fast crash, little cushion
-# over the five-week slide.  2022: rate shock, bonds fell with stocks.
-SCENARIOS = {
-    "2008 global financial crisis": {
-        "us_equity": -0.37, "intl_equity": -0.43, "em_equity": -0.53,
-        "core_bonds": 0.05, "short_bonds": 0.07, "cash": 0.02,
-    },
-    "2020 covid crash": {
-        "us_equity": -0.34, "intl_equity": -0.33, "em_equity": -0.32,
-        "core_bonds": -0.01, "short_bonds": 0.01, "cash": 0.00,
-    },
-    "2022 rate shock": {
-        "us_equity": -0.18, "intl_equity": -0.14, "em_equity": -0.20,
-        "core_bonds": -0.13, "short_bonds": -0.04, "cash": 0.015,
-    },
+from .implementation import ticker_weights
+from .proxies import PROXY_MAP, common_closes, load_proxies
+
+# Each episode reports two numbers: the full calendar-year return, and the
+# peak-to-trough slide inside a window of month-ends (inclusive).
+SCENARIO_WINDOWS = {
+    "2008 global financial crisis": {"calendar_year": 2008, "window": ("2007-10", "2009-02")},
+    "2020 covid crash": {"calendar_year": 2020, "window": ("2020-02", "2020-03")},
+    "2022 rate shock": {"calendar_year": 2022, "window": ("2022-01", "2022-12")},
 }
 
 
-def scenario_return(weights: dict[str, float], scenario: str) -> float:
-    """If this episode happened again, the mix would move by the weighted
-    average of what each asset class did back then."""
-    if scenario not in SCENARIOS:
-        raise ValueError(f"unknown scenario {scenario!r}; pick from {sorted(SCENARIOS)}")
-    shocks = SCENARIOS[scenario]
-    unknown = set(weights) - set(shocks)
-    if unknown:
-        raise ValueError(f"no scenario return for asset classes: {sorted(unknown)}")
-    return sum(w * shocks[asset] for asset, w in weights.items())
-
-
-def run_scenarios(weights: dict[str, float]) -> dict[str, float]:
-    """Portfolio return under every stored scenario."""
-    return {name: scenario_return(weights, name) for name in SCENARIOS}
-
-
-def portfolio_daily_returns(
-    ticker_weights: dict[str, float],
-    closes: pd.DataFrame,
-) -> pd.Series:
-    """Daily return of the mix: each day's weighted average of the
-    holdings' returns (weights held constant, i.e. rebalanced daily)."""
+def portfolio_returns(ticker_weights: dict[str, float], closes: pd.DataFrame) -> pd.Series:
+    """Period return of the mix: each period's weighted average of the
+    holdings' returns (weights held constant, i.e. rebalanced every period)."""
     missing = set(ticker_weights) - set(closes.columns)
     if missing:
         raise ValueError(f"closes are missing tickers: {sorted(missing)}")
@@ -58,11 +32,109 @@ def portfolio_daily_returns(
 
 
 def max_drawdown(returns: pd.Series) -> float:
-    """Worst peak-to-trough slide of the growth-of-a-dollar curve,
-    as a negative fraction."""
-    curve = (1.0 + returns).cumprod()
-    drawdown = curve / curve.cummax() - 1.0
-    return float(drawdown.min())
+    """Worst peak-to-trough slide of the growth-of-a-dollar curve, counting
+    the dollar you started with, as a negative fraction."""
+    curve = np.concatenate([[1.0], np.cumprod(1.0 + np.asarray(returns, dtype=float))])
+    peak = np.maximum.accumulate(curve)
+    return float((curve / peak - 1.0).min())
+
+
+def _month_end(label: str) -> pd.Timestamp:
+    return pd.Timestamp(label) + pd.offsets.MonthEnd(0)
+
+
+def window_returns(returns: pd.Series, start: str, end: str) -> pd.Series:
+    """The monthly returns from ``start`` to ``end`` inclusive, given as
+    ``"YYYY-MM"``; the first month's return is measured from the month-end
+    before the window."""
+    window = returns.loc[_month_end(start):_month_end(end)]
+    if window.empty:
+        raise ValueError(f"no returns between {start} and {end}")
+    return window
+
+
+def calendar_year_return(returns: pd.Series, year: int) -> float:
+    """Compounded return over the twelve months of ``year``."""
+    months = returns.loc[str(year)]
+    if len(months) != 12:
+        raise ValueError(f"{year} has {len(months)} months of returns, need 12")
+    return float((1.0 + months).prod() - 1.0)
+
+
+def peak_to_trough(returns: pd.Series, start: str, end: str) -> float:
+    """Worst slide inside the window, from the month-end before it starts."""
+    return max_drawdown(window_returns(returns, start, end))
+
+
+def _proxy_weights(weights: dict[str, float], proxy_map: dict[str, str] | None) -> dict[str, float]:
+    proxy_map = proxy_map or PROXY_MAP
+    unknown = set(weights) - set(proxy_map)
+    if unknown:
+        raise ValueError(f"no proxy for asset classes: {sorted(unknown)}")
+    return ticker_weights(weights, proxy_map)
+
+
+def replay_scenarios(
+    weights: dict[str, float],
+    closes: pd.DataFrame | None = None,
+    proxy_map: dict[str, str] | None = None,
+) -> pd.DataFrame:
+    """If each episode happened again, what the mix would do: one row per
+    scenario with the calendar-year return and the peak-to-trough slide,
+    replayed on the proxy ETFs' month-end history."""
+    closes = load_proxies() if closes is None else closes
+    returns = portfolio_returns(_proxy_weights(weights, proxy_map), closes)
+    rows = []
+    for name, spec in SCENARIO_WINDOWS.items():
+        start, end = spec["window"]
+        rows.append({
+            "scenario": name,
+            "calendar_year": spec["calendar_year"],
+            "calendar_year_return": calendar_year_return(returns, spec["calendar_year"]),
+            "window_start": start,
+            "window_end": end,
+            "peak_to_trough": peak_to_trough(returns, start, end),
+        })
+    return pd.DataFrame(rows).set_index("scenario")
+
+
+def asset_class_scenarios(
+    closes: pd.DataFrame | None = None,
+    proxy_map: dict[str, str] | None = None,
+) -> pd.DataFrame:
+    """The same two numbers for each asset class on its own, so the banker
+    can say what every building block did in each episode."""
+    closes = load_proxies() if closes is None else closes
+    proxy_map = proxy_map or PROXY_MAP
+    rows = []
+    for asset, ticker in proxy_map.items():
+        returns = closes[ticker].pct_change().dropna()
+        for name, spec in SCENARIO_WINDOWS.items():
+            start, end = spec["window"]
+            rows.append({
+                "scenario": name,
+                "asset_class": asset,
+                "ticker": ticker,
+                "calendar_year_return": calendar_year_return(returns, spec["calendar_year"]),
+                "peak_to_trough": peak_to_trough(returns, start, end),
+            })
+    return pd.DataFrame(rows).set_index(["scenario", "asset_class"])
+
+
+def historical_drawdown(
+    weights: dict[str, float],
+    closes: pd.DataFrame | None = None,
+    proxy_map: dict[str, str] | None = None,
+) -> dict[str, object]:
+    """Worst month-end slide of the mix over the longest window every proxy
+    shares, with the window's first and last month-end."""
+    closes = common_closes(load_proxies() if closes is None else closes)
+    returns = portfolio_returns(_proxy_weights(weights, proxy_map), closes)
+    return {
+        "max_drawdown": max_drawdown(returns),
+        "window_start": closes.index[0],
+        "window_end": closes.index[-1],
+    }
 
 
 def goal_miss_probability(

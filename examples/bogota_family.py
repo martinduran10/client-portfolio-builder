@@ -2,13 +2,13 @@
 
 $5M, 60% offshore in Miami, 15-year horizon, goal "grow", tolerates a
 15% loss in a bad year, COP exposure on the onshore 40%.  Runs end to
-end without the Bloomberg data; if ``data/closes.csv`` exists, it also
-reports the mix's worst historical drawdown.
+end on the committed proxy history; if ``data/closes.csv`` exists, it
+also reports the mix's worst daily drawdown on the Bloomberg closes.
 """
 
 from pathlib import Path
 
-from cpb import allocation, data, fx, implementation, stress
+from cpb import allocation, data, fx, implementation, proxies, stress
 from cpb.profile import ClientProfile, risk_level
 from cpb.proposal import render_proposal, write_proposal
 
@@ -40,15 +40,17 @@ print("\nHoldings:")
 print(holdings.to_string(index=False))
 
 # --- 4. Stress: three bad years, drawdown, goal-miss odds --------------------
-scenarios = stress.run_scenarios(weights)
-print("\nIf history repeated:")
-for name, ret in scenarios.items():
-    print(f"  {name}: {ret:.1%} ({ret * profile.total_assets_usd:,.0f} USD)")
+monthly = proxies.load_proxies()  # cached month-end closes of the proxy ETFs
+scenarios = stress.replay_scenarios(weights, monthly)
+print("\nIf history repeated (full year / peak to trough):")
+for name, row in scenarios.iterrows():
+    print(f"  {name}: {row.calendar_year_return:.1%} / {row.peak_to_trough:.1%} "
+          f"({row.peak_to_trough * profile.total_assets_usd:,.0f} USD)")
 
 closes_path = Path(__file__).resolve().parents[1] / "data" / "closes.csv"
 if closes_path.exists():
     closes = data.load_closes(closes_path)
-    returns = stress.portfolio_daily_returns(
+    returns = stress.portfolio_returns(
         implementation.ticker_weights(weights), closes
     )
     print(f"\nWorst historical drawdown of this mix: {stress.max_drawdown(returns):.1%}")
