@@ -225,3 +225,4 @@ data/*.parquet
 
 # Generated proposals
 examples/output/
+!data/proxies.csv
