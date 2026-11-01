@@ -348,3 +348,32 @@ to level 2; the tolerance still binds, since horizon and goal allow 5.
 The odds of missing the doubling goal rise from 52% to 59% because the
 level 2 return (4.55%) sits below the 4.73% a year that doubling in 15
 years needs. Test count: 121 → 128.
+
+
+---
+
+# Trade-off section (2026-11-01, later)
+
+One commit. New `src/cpb/tradeoff.py`: `level_summary` collects a
+level's worst replayed calendar year, its 2008 peak-to-trough slide, its
+expected return and its odds of missing the goal, and `tradeoff_table`
+returns the recommended level and the next one up (one row at level 5).
+`render_proposal` takes the table as a required `tradeoff` argument and
+prints a "Trade-off" section after the goal-miss odds, followed by the
+sentence "Reaching the goal with higher confidence requires accepting a
+larger loss in a bad year." The example prints the same two rows.
+Final run: all tests pass; the proposal was regenerated.
+
+Trade-off table on the Bogotá page (before: no such section):
+
+| Level | Worst calendar year | 2008 peak to trough | Expected return | Odds of missing the goal |
+|---|---|---|---|---|
+| Level 2 — Conservative Income (recommended) | -12.2% (2022) | -21.0% | 4.55% | 59% |
+| Level 3 — Balanced (next level up) | -21.3% (2008) | -32.9% | 5.04% | 52% |
+
+Moving up one level buys 0.48% a year of expected return and
+cuts the odds of missing the $10M goal from 59% to 52%, at the price of a
+worst year of -21.3% instead of -12.2% and a 2008 slide of
+-32.9% instead of -21.0%. The family's stated 15% tolerance
+holds level 2 only; level 3's worst year of 21% is the loss they would
+have to accept. Test count: 128 → 135.

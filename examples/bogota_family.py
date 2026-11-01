@@ -8,7 +8,7 @@ also reports the mix's worst daily drawdown on the Bloomberg closes.
 
 from pathlib import Path
 
-from cpb import allocation, data, fx, implementation, proxies, stress
+from cpb import allocation, data, fx, implementation, proxies, stress, tradeoff
 from cpb.profile import ClientProfile, risk_level, worst_year_loss
 from cpb.proposal import render_proposal, write_proposal
 
@@ -84,7 +84,18 @@ miss = stress.goal_miss_probability(
 print(f"\nOdds of ending below ${target_usd:,.0f} in 15 years "
       f"({n_paths:,} paths): {miss:.0%}")
 
-# --- 7. One-page proposal ----------------------------------------------------
+# --- 7. Trade-off: this level against the next one up -----------------------
+choices = tradeoff.tradeoff_table(
+    level, profile.total_assets_usd, target_usd, int(profile.horizon_years),
+    valuation_premiums=valuation_premiums, daily=daily, monthly=monthly, n_paths=n_paths,
+)
+print("\nTrade-off (worst year / 2008 peak to trough / return / odds of missing):")
+for lvl, row in choices.iterrows():
+    print(f"  Level {lvl} {row['name']}: {row.worst_year_return:.1%} ({row.worst_year}) / "
+          f"{row.crisis_2008_slide:.1%} / {row.expected_return:.2%} / {row.miss_probability:.0%}")
+print("Reaching the goal with higher confidence requires accepting a larger loss in a bad year.")
+
+# --- 8. One-page proposal ----------------------------------------------------
 html = render_proposal(
     profile=profile,
     level=level,
@@ -95,6 +106,7 @@ html = render_proposal(
     target_usd=target_usd,
     miss_probability=miss,
     n_paths=n_paths,
+    tradeoff=choices,
     fx={**split, "depreciation": depreciation},
 )
 out = write_proposal(html, Path(__file__).parent / "output" / "bogota_family.html")

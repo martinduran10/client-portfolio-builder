@@ -9,6 +9,7 @@ from cpb.implementation import to_holdings
 from cpb.profile import ClientProfile
 from cpb.proposal import render_proposal, write_proposal
 from cpb.stress import historical_drawdown, replay_scenarios
+from cpb.tradeoff import tradeoff_table
 
 
 @pytest.fixture
@@ -33,6 +34,7 @@ def pieces():
         target_usd=10_000_000,
         miss_probability=0.47,
         n_paths=10_000,
+        tradeoff=tradeoff_table(2, profile.total_assets_usd, 10_000_000, 15),
         fx={"offshore_usd": 3_000_000, "onshore_usd": 2_000_000, "depreciation": 0.20},
         as_of=date(2026, 10, 31),
     )
@@ -112,3 +114,13 @@ def test_risk_section_warns_when_no_mix_fits(pieces):
     html = render_proposal(**pieces)
     assert "No model portfolio fits the stated 5% bad-year tolerance" in html
     assert "the most conservative mix lost 9%" in html
+
+
+def test_tradeoff_section_compares_the_next_level_up(pieces):
+    html = render_proposal(**pieces)
+    assert "<h2>Trade-off</h2>" in html
+    assert "Level 2 — Conservative Income <span class='meta'>(recommended)</span>" in html
+    assert "Level 3 — Balanced <span class='meta'>(next level up)</span>" in html
+    assert "Reaching the goal with higher confidence requires accepting a larger loss in a bad year." in html
+    next_up = pieces["tradeoff"].loc[3]
+    assert f"{next_up.miss_probability * 100:.0f}%" in html

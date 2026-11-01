@@ -63,6 +63,7 @@ def render_proposal(
     target_usd: float,
     miss_probability: float,
     n_paths: int,
+    tradeoff: pd.DataFrame,
     fx: dict[str, float] | None = None,
     as_of: date | None = None,
 ) -> str:
@@ -72,7 +73,8 @@ def render_proposal(
     per episode with its calendar-year return and peak-to-trough slide.
     ``drawdown`` is ``stress.historical_drawdown`` for the same mix.
     ``expected_return`` is the number the Monte Carlo used and ``n_paths``
-    how many futures it drew.  ``fx``, when given, carries ``onshore_usd``,
+    how many futures it drew.  ``tradeoff`` is ``tradeoff.tradeoff_table``:
+    the recommended level and the next one up.  ``fx``, when given, carries ``onshore_usd``,
     ``offshore_usd`` and the ``depreciation`` used for the currency stress
     line; the onshore slice carries no expected currency drift.
     """
@@ -116,6 +118,19 @@ def render_proposal(
         f"In a crisis like 2008, this portfolio fell "
         f"{_pct(-scenarios.loc[crisis, 'peak_to_trough'])} from peak to trough."
         if crisis in scenarios.index else ""
+    )
+
+    def _role(lvl: int) -> str:
+        return "recommended" if lvl == level else "next level up"
+
+    tradeoff_rows = "\n".join(
+        f"<tr><td>Level {lvl} — {row['name']} <span class='meta'>({_role(lvl)})</span></td>"
+        f"<td class='num {_sign(row.worst_year_return)}'>{_pct(row.worst_year_return)} "
+        f"<span class='meta'>({row.worst_year})</span></td>"
+        f"<td class='num {_sign(row.crisis_2008_slide)}'>{_pct(row.crisis_2008_slide)}</td>"
+        f"<td class='num'>{_pct(row.expected_return)}</td>"
+        f"<td class='num'>{_pct(row.miss_probability, 0)}</td></tr>"
+        for lvl, row in tradeoff.iterrows()
     )
 
     dd_start = pd.Timestamp(drawdown["window_start"]).strftime("%b %Y")
@@ -180,6 +195,14 @@ close-to-close slide inside the window shown.</p>
 <p>Across {n_paths:,} simulated futures, this mix ends below the
 {_usd(target_usd)} target in <strong>{_pct(miss_probability, 0)}</strong> of them
 after {profile.horizon_years:.0f} years.</p>
+
+<h2>Trade-off</h2>
+<table>
+<tr><th>Level</th><th class="num">Worst calendar year</th><th class="num">2008 peak to trough</th>
+<th class="num">Expected return</th><th class="num">Odds of missing the goal</th></tr>
+{tradeoff_rows}
+</table>
+<p>Reaching the goal with higher confidence requires accepting a larger loss in a bad year.</p>
 {fx_section}
 <p class="footer">Return estimates are long-run assumptions, not promises.
 Scenario figures replay past episodes on daily ETF prices and do not predict
