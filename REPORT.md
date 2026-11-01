@@ -299,3 +299,52 @@ Test count: 111 passed + 8 xfailed → 121 passed, 0 xfailed.
    onshore sleeve, undated rates and stress size, proxy versus holding
    tickers, unsourced return estimates and premium, pinned versus live
    tables.
+
+
+---
+
+# Tolerance mapping direction (2026-11-01, later)
+
+One commit. A level's worst calendar-year replay loss is now the
+*minimum* tolerance a client needs to hold it: `loss_tolerance_level`
+returns the highest level whose worst year is ≤ the client's
+`max_annual_loss` (the existing field name is kept), and if even level
+1's worst year exceeds it, level 1 is assigned with a `ToleranceWarning`
+saying no model portfolio fits. `profile.WORST_YEAR_LOSS` replaces
+`LOSS_TOLERANCE_BANDS`; `worst_year_loss(level)` and
+`fits_tolerance(max_annual_loss)` replace `max_loss_for_level`;
+`cpb.calibrate.worst_year_losses` replaces `loss_tolerance_bands` and
+now includes level 5. Horizon bands and goal caps are untouched. The
+proposal's risk paragraph states the mix's worst year, the client's
+tolerance, the next level's worst year, and warns when nothing fits.
+Final run: 128 passed.
+
+| Level | Worst replayed year | Tolerance that held it before (upper bound) | Tolerance needed now (minimum) |
+|---|---|---|---|
+| 1 | -9.3% (2022) | ≤ 9% | ≥ 9% (below that: level 1 with a warning) |
+| 2 | -12.3% (2022) | 9% to 12% | ≥ 12% |
+| 3 | -21.3% (2008) | 12% to 21% | ≥ 21% |
+| 4 | -30.1% (2008) | 21% to 30% | ≥ 30% |
+| 5 | -37.9% (2008) | > 30% | ≥ 38% |
+
+The Bogotá family (15% tolerance, 15 years, "grow") moves from level 3
+to level 2; the tolerance still binds, since horizon and goal allow 5.
+
+| Output | Before (level 3, Balanced) | After (level 2, Conservative Income) |
+|---|---|---|
+| Mix | US 30, intl 15, EM 10, core 35, short 7, cash 3 | US 20, intl 10, EM 5, core 45, short 15, cash 5 |
+| Largest holding | AGG $1,750,000 | AGG $2,250,000 |
+| Expected return | 5.04% | 4.55% |
+| Volatility | 9.44% | 6.54% |
+| Odds of ending below $10M in 15 years | 52% | 59% |
+| 2008 full year / peak to trough | -21.3% / -32.9% (-$1,643,835) | -11.6% / -21.0% (-$1,051,663) |
+| 2020 full year / peak to trough | +11.9% / -19.4% (-$972,153) | +9.8% / -13.7% (-$685,400) |
+| 2022 full year / peak to trough | -14.1% / -20.0% (-$997,641) | -12.2% / -16.7% (-$833,478) |
+| Worst slide on record | -33.3% | -21.0% |
+| Page, risk paragraph | "the worst year on record for this level's mix lost 21%" | "this mix lost 12% in its worst year, within the 15% the client can sit through; the next level up lost 21%" |
+| Page, 2008 sentence | fell 32.9% from peak to trough | fell 21.0% from peak to trough |
+| COP stress (unchanged) | -8.0% (-$400,000) | -8.0% (-$400,000) |
+
+The odds of missing the doubling goal rise from 52% to 59% because the
+level 2 return (4.55%) sits below the 4.73% a year that doubling in 15
+years needs. Test count: 121 → 128.

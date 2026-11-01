@@ -14,7 +14,7 @@ import pandas as pd
 
 from .allocation import MODEL_NAMES
 from .implementation import ETF_NAMES
-from .profile import ClientProfile, max_loss_for_level
+from .profile import ClientProfile, fits_tolerance, worst_year_loss
 
 _CSS = """
 @page { size: A4; margin: 18mm; }
@@ -93,13 +93,24 @@ def render_proposal(
         for name, row in scenarios.iterrows()
     )
 
-    band = max_loss_for_level(level)
-    band_note = (
-        f"Loss tolerance is matched to full calendar years: the worst year on "
-        f"record for this level's mix lost {_pct(band, 0)} (replayed 2008, 2020 "
-        f"and 2022). " if band is not None else
-        "Loss tolerance is matched to full calendar years; this level has no cap. "
-    )
+    tolerance = _pct(profile.max_annual_loss, 0)
+    if not fits_tolerance(profile.max_annual_loss):
+        band_note = (
+            f"No model portfolio fits the stated {tolerance} bad-year tolerance: even "
+            f"the most conservative mix lost {_pct(worst_year_loss(1), 0)} in its worst "
+            f"replayed calendar year (2008, 2020 or 2022), so level 1 is shown. "
+        )
+    else:
+        next_up = (
+            f"; the next level up lost {_pct(worst_year_loss(level + 1), 0)}. "
+            if level < 5 else ". "
+        )
+        band_note = (
+            f"A level is held only if its worst replayed calendar year (2008, 2020 or "
+            f"2022) stays inside the client's tolerance: this mix lost "
+            f"{_pct(worst_year_loss(level), 0)} in its worst year, within the {tolerance} "
+            f"the client can sit through{next_up}"
+        )
     crisis = "2008 global financial crisis"
     crisis_note = (
         f"In a crisis like 2008, this portfolio fell "

@@ -9,7 +9,7 @@ also reports the mix's worst daily drawdown on the Bloomberg closes.
 from pathlib import Path
 
 from cpb import allocation, data, fx, implementation, proxies, stress
-from cpb.profile import ClientProfile, max_loss_for_level, risk_level
+from cpb.profile import ClientProfile, risk_level, worst_year_loss
 from cpb.proposal import render_proposal, write_proposal
 
 # --- 1. Profile → risk level -------------------------------------------------
@@ -25,8 +25,8 @@ profile = ClientProfile(
 level = risk_level(profile)
 print(f"Risk level: {level} ({allocation.MODEL_NAMES[level]})")
 print("  The 15% bad-year tolerance binds; horizon and goal would allow more.")
-print(f"  Level {level}'s band is a {max_loss_for_level(level):.0%} bad year: "
-      "what its mix lost in its worst replayed calendar year.")
+print(f"  Level {level}'s mix lost {worst_year_loss(level):.0%} in its worst replayed "
+      f"year, inside the 15%; level {level + 1}'s lost {worst_year_loss(level + 1):.0%}.")
 
 # --- 2. Allocation and the 10-year return estimate ---------------------------
 weights = allocation.model_portfolio(level)

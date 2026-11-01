@@ -22,10 +22,10 @@ def pieces():
         offshore_share=0.60,
         local_currency="COP",
     )
-    weights = model_portfolio(3)
+    weights = model_portfolio(2)  # a 15% tolerance holds level 2, not 3
     return dict(
         profile=profile,
-        level=3,
+        level=2,
         holdings=to_holdings(weights, profile.total_assets_usd),
         expected_return=expected_return(weights),
         scenarios=replay_scenarios(weights),
@@ -41,8 +41,8 @@ def pieces():
 def test_contains_the_key_facts(pieces):
     html = render_proposal(**pieces)
     assert "Bogotá family" in html
-    assert "Level 3" in html
-    assert "Balanced" in html
+    assert "Level 2" in html
+    assert "Conservative Income" in html
     assert "IVV" in html
     assert "$5,000,000" in html
     assert "$10,000,000" in html
@@ -95,8 +95,20 @@ def test_currency_is_a_stress_not_a_drift(pieces):
     assert "expected to slide" not in html
 
 
-def test_risk_section_states_the_band_and_the_2008_slide(pieces):
+def test_risk_section_states_the_worst_year_and_the_2008_slide(pieces):
     html = render_proposal(**pieces)
-    assert "worst year on record for this level's mix lost 21%" in html
+    assert "this mix lost 12% in its worst year, within the 15%" in html
+    assert "the next level up lost 21%" in html
     slide = -pieces["scenarios"].loc["2008 global financial crisis", "peak_to_trough"]
     assert f"In a crisis like 2008, this portfolio fell {slide * 100:.1f}% from peak to trough." in html
+
+
+def test_risk_section_warns_when_no_mix_fits(pieces):
+    from dataclasses import replace
+
+    pieces["profile"] = replace(pieces["profile"], max_annual_loss=0.05)
+    pieces["level"] = 1
+    pieces["holdings"] = to_holdings(model_portfolio(1), 5_000_000)
+    html = render_proposal(**pieces)
+    assert "No model portfolio fits the stated 5% bad-year tolerance" in html
+    assert "the most conservative mix lost 9%" in html

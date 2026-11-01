@@ -6,9 +6,11 @@ from cpb.profile import (
     ClientProfile,
     goal_level,
     horizon_level,
+    ToleranceWarning,
+    fits_tolerance,
     loss_tolerance_level,
-    max_loss_for_level,
     risk_level,
+    worst_year_loss,
 )
 
 
@@ -25,15 +27,25 @@ def make_profile(**overrides):
 
 
 class TestLossToleranceLevel:
-    def test_band_edges_are_inclusive(self):
+    def test_highest_level_whose_worst_year_fits(self):
+        # Tolerating exactly a level's worst year is enough to hold it.
         assert loss_tolerance_level(0.09) == 1
         assert loss_tolerance_level(0.12) == 2
         assert loss_tolerance_level(0.21) == 3
         assert loss_tolerance_level(0.30) == 4
-        assert loss_tolerance_level(0.31) == 5
+        assert loss_tolerance_level(0.38) == 5
+        assert loss_tolerance_level(0.50) == 5
 
-    def test_tiny_tolerance_is_level_one(self):
-        assert loss_tolerance_level(0.01) == 1
+    def test_between_levels_rounds_down(self):
+        # 15% covers level 2's worst year (12%) but not level 3's (21%).
+        assert loss_tolerance_level(0.15) == 2
+        assert loss_tolerance_level(0.209) == 2
+
+    def test_tolerance_below_every_level_is_level_one_with_a_warning(self):
+        with pytest.warns(ToleranceWarning, match="no model portfolio fits a 5%"):
+            assert loss_tolerance_level(0.05) == 1
+        assert not fits_tolerance(0.05)
+        assert fits_tolerance(0.09)
 
 
 class TestHorizonLevel:
@@ -56,9 +68,9 @@ class TestGoalLevel:
 
 class TestRiskLevel:
     def test_most_conservative_input_wins(self):
-        # Long horizon and a grow goal, but tolerance binds at level 3.
+        # Long horizon and a grow goal, but tolerance binds at level 2.
         profile = make_profile(goal="grow", horizon_years=20, max_annual_loss=0.15)
-        assert risk_level(profile) == 3
+        assert risk_level(profile) == 2
 
     def test_short_horizon_binds(self):
         profile = make_profile(goal="grow", horizon_years=2, max_annual_loss=0.50)
@@ -79,7 +91,7 @@ class TestRiskLevel:
             offshore_share=0.60,
             local_currency="COP",
         )
-        assert risk_level(profile) == 3
+        assert risk_level(profile) == 2
         assert profile.onshore_share == pytest.approx(0.40)
 
 
@@ -107,15 +119,16 @@ class TestValidation:
             make_profile(offshore_share=1.2)
 
 
-class TestMaxLossForLevel:
-    def test_caps_mirror_the_bands(self):
-        assert [max_loss_for_level(l) for l in range(1, 5)] == [0.09, 0.12, 0.21, 0.30]
-        assert max_loss_for_level(5) is None
+class TestWorstYearLoss:
+    def test_rises_with_level(self):
+        losses = [worst_year_loss(level) for level in range(1, 6)]
+        assert losses == [0.09, 0.12, 0.21, 0.30, 0.38]
+        assert losses == sorted(losses)
 
     def test_round_trips_with_loss_tolerance_level(self):
-        for level in range(1, 5):
-            assert loss_tolerance_level(max_loss_for_level(level)) == level
+        for level in range(1, 6):
+            assert loss_tolerance_level(worst_year_loss(level)) == level
 
     def test_rejects_unknown_level(self):
         with pytest.raises(ValueError, match="risk level"):
-            max_loss_for_level(0)
+            worst_year_loss(0)

@@ -8,18 +8,23 @@ calls for.  We never take more risk than the client's own answers allow.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 # The most aggressive level each goal can justify on its own.
 GOAL_CAPS = {"preserve": 2, "income": 3, "balanced": 4, "grow": 5}
 
-# Bad-year loss a client can sit through → the level that allows.  Each
-# level's upper bound is that level's worst calendar-year loss on the
+# What each level's mix lost in its worst calendar year on the
 # 2008/2020/2022 replays (data/proxies.csv month-ends, rebalanced
-# monthly), rounded to the nearest whole percent; anything beyond the
-# last band is level 5.  Regenerate with ``python -m cpb.calibrate``;
-# tests/test_tolerance.py fails if these drift from the data.
-LOSS_TOLERANCE_BANDS = ((0.09, 1), (0.12, 2), (0.21, 3), (0.30, 4))
+# monthly), rounded to the nearest whole percent.  A client must tolerate
+# at least this to hold the level.  Regenerate with
+# ``python -m cpb.calibrate``; tests/test_tolerance.py fails if these
+# drift from the data.
+WORST_YEAR_LOSS = {1: 0.09, 2: 0.12, 3: 0.21, 4: 0.30, 5: 0.38}
+
+
+class ToleranceWarning(UserWarning):
+    """No model portfolio's worst replayed year fits the stated tolerance."""
 
 
 @dataclass(frozen=True)
@@ -72,28 +77,38 @@ class ClientProfile:
         return 1.0 - self.offshore_share
 
 
+def worst_year_loss(level: int) -> float:
+    """What the level's mix lost in its worst replayed calendar year, which
+    is the smallest bad-year loss a client must tolerate to hold it:
+    9% at level 1, 12% at 2, 21% at 3, 30% at 4, 38% at 5."""
+    if level not in WORST_YEAR_LOSS:
+        raise ValueError(f"risk level must be 1-5, got {level}")
+    return WORST_YEAR_LOSS[level]
+
+
+def fits_tolerance(max_annual_loss: float) -> bool:
+    """Whether even the most conservative mix stayed inside the tolerance
+    in its worst replayed year."""
+    return worst_year_loss(1) <= max_annual_loss
+
+
 def loss_tolerance_level(max_annual_loss: float) -> int:
-    """Level the stated loss tolerance allows: a 1-5 band on the bad-year loss.
-
-    Tolerating up to 9% → 1, 12% → 2, 21% → 3, 30% → 4, more → 5: each
-    cap is what that level's mix lost in its worst replayed year.
+    """Level the stated loss tolerance allows: the highest level whose worst
+    replayed year stayed inside it (tolerating 9% → 1, 12% → 2, 21% → 3,
+    30% → 4, 38% → 5).  If even level 1 lost more than the client can sit
+    through, level 1 is assigned with a ``ToleranceWarning``.
     """
-    for cap, level in LOSS_TOLERANCE_BANDS:
-        if max_annual_loss <= cap:
-            return level
-    return 5
-
-
-def max_loss_for_level(level: int) -> float | None:
-    """The largest bad-year loss a client at this level said they could sit
-    through, which is also the level's worst replayed calendar year: 9% at
-    level 1, 12% at 2, 21% at 3, 30% at 4; level 5 has no cap (``None``)."""
-    for cap, band_level in LOSS_TOLERANCE_BANDS:
-        if band_level == level:
-            return cap
-    if level == 5:
-        return None
-    raise ValueError(f"risk level must be 1-5, got {level}")
+    allowed = [level for level, loss in WORST_YEAR_LOSS.items() if loss <= max_annual_loss]
+    if not allowed:
+        warnings.warn(
+            f"no model portfolio fits a {max_annual_loss:.0%} bad-year tolerance: "
+            f"even level 1 lost {worst_year_loss(1):.0%} in its worst replayed year; "
+            "assigning level 1",
+            ToleranceWarning,
+            stacklevel=2,
+        )
+        return 1
+    return max(allowed)
 
 
 def horizon_level(horizon_years: float) -> int:

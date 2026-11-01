@@ -19,8 +19,8 @@ two groups:
 | Span | daily 1993-01-29 to 2026-10-30 (8,497 trading days); month-ends 1993-01 to 2026-10 (406). First close: SPY 1993-01-29, EFA 2001-08-27, EEM 2003-04-14, AGG 2003-09-29, SHY 2002-07-30, BIL 2007-05-30, HYG 2007-04-11, GLD 2004-11-18 |
 | Longest common window | daily 2007-05-30 to 2026-10-30; month-ends 2007-05-31 to 2026-10-31, i.e. 232 monthly returns from 2007-06 to 2026-10 (BIL is the youngest proxy) |
 | Proxies | us_equity → SPY, intl_equity → EFA, em_equity → EEM, core_bonds → AGG, short_bonds → SHY, cash → BIL (`cpb.proxies.PROXY_MAP`); HYG and GLD are cached for future classes and unused |
-| Which file feeds what | daily: peak-to-trough slides and the worst slide on record; month-ends: calendar-year returns, the volatility table, the loss-tolerance bands and the Monte Carlo |
-| Refresh | `pip install -e ".[data]"` then `python -m cpb.proxies` (network needed), then paste `python -m cpb.calibrate` into `allocation.MODEL_VOLATILITY` and `profile.LOSS_TOLERANCE_BANDS` |
+| Which file feeds what | daily: peak-to-trough slides and the worst slide on record; month-ends: calendar-year returns, the volatility table, the worst-year losses that map tolerance to a level, and the Monte Carlo |
+| Refresh | `pip install -e ".[data]"` then `python -m cpb.proxies` (network needed), then paste `python -m cpb.calibrate` into `allocation.MODEL_VOLATILITY` and `profile.WORST_YEAR_LOSS` |
 
 Two caveats carry through every computed number. ETF prices include
 premium/discount swings the underlying index does not have (AGG's 2008
@@ -109,7 +109,7 @@ default, which is itself an assumption that they trade at fair value.
 
 Defined in `src/cpb/stress.py` (`SCENARIO_WINDOWS`, `replay_scenarios`,
 `asset_class_scenarios`); used by the example, the proposal page,
-`cpb.calibrate.loss_tolerance_bands`, `tests/test_stress.py` and
+`cpb.calibrate.worst_year_losses`, `tests/test_stress.py` and
 `tests/test_tolerance.py`.
 
 | Episode | Calendar year | Peak-to-trough window (whole months, inclusive) |
@@ -201,25 +201,33 @@ Defined in `src/cpb/stress.py` (`goal_miss_probability`,
 | Fees, taxes, inflation, contributions, withdrawals | none (all 0) | Author's choice | implicit |
 | Goal in the worked example | $10,000,000 (double $5M in 15 years) | Estimated by the author as the meaning of "grow" | example (`target_usd`) |
 
-## 7. Risk-level bands — loss bands computed; horizon bands and goal caps estimated
+## 7. Risk-level rule — worst-year losses computed; horizon bands and goal caps estimated
 
 Defined in `src/cpb/profile.py`; used by `profile.risk_level`.
 
 | Assumption | Value | Source | Used in |
 |---|---|---|---|
-| Loss-tolerance bands | ≤9% → 1, ≤12% → 2, ≤21% → 3, ≤30% → 4, more → 5 | Computed: each level's worst calendar-year loss on the section 4 replays (level 1 -9.3% in 2022, level 2 -12.3% in 2022, level 3 -21.3% in 2008, level 4 -30.1% in 2008), rounded to the nearest whole percent; level 5 (-37.9% in 2008) has no cap | `LOSS_TOLERANCE_BANDS`, `loss_tolerance_level`, `max_loss_for_level` |
+| Worst-year loss per level, the minimum tolerance to hold it | level 1 9%, 2 12%, 3 21%, 4 30%, 5 38% | Computed: each level's worst calendar-year loss on the section 4 replays (level 1 -9.3% in 2022, level 2 -12.3% in 2022, level 3 -21.3% in 2008, level 4 -30.1% in 2008, level 5 -37.9% in 2008), rounded to the nearest whole percent | `WORST_YEAR_LOSS`, `worst_year_loss`, `fits_tolerance`, `loss_tolerance_level` |
+| Tolerance → level mapping | the highest level whose worst-year loss is ≤ the client's tolerance; below 9%, level 1 with a `ToleranceWarning` | Rule chosen by the author (2026-11-01); the numbers in it are computed | `loss_tolerance_level` |
 | Horizon bands | <3 y → 1, <5 → 2, <10 → 3, <15 → 4, 15+ → 5 | Estimated by the author | `horizon_level` |
 | Goal caps | preserve 2, income 3, balanced 4, grow 5 | Estimated by the author | `GOAL_CAPS`, `goal_level` |
 | Combination rule | minimum of the three | Estimated by the author | `risk_level` |
 
-The loss bands are produced by `python -m cpb.calibrate`
-(`cpb.calibrate.loss_tolerance_bands`) from the month-end file and the
-2008/2020/2022 windows. Peak-to-trough slides are deeper than every band
-and are never used to set the level; the proposal states the level's
-band and the 2008 slide side by side. `tests/test_tolerance.py` asserts
-each band equals the rounded worst year, that the constants match the
-calibration, and that the slides exceed the bands. The bands used before
-this calibration (5% / 10% / 15% / 25%) were estimated by the author.
+The worst-year losses are produced by `python -m cpb.calibrate`
+(`cpb.calibrate.worst_year_losses`) from the month-end file and the
+2008/2020/2022 windows. A client tolerating 15% holds level 2 (worst
+year 12%) but not level 3 (worst year 21%). Peak-to-trough slides are
+deeper than every worst year and are never used to set the level; the
+proposal states the level's worst year, the next level's, and the 2008
+slide side by side. `tests/test_tolerance.py` asserts each constant
+equals the rounded worst year, that the constants match the calibration,
+that tolerating exactly a level's worst year holds it and a tenth of a
+point less does not, and that the slides exceed the worst years. The
+bands used before this calibration (tolerating up to 5% / 10% / 15% /
+25% → levels 1-4, more → 5) were estimated by the author, and the first
+calibration on this branch kept that "up to" direction with the computed
+numbers, which let a client hold a level whose worst year exceeded their
+tolerance.
 
 ## 8. Worked-example inputs
 

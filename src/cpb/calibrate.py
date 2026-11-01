@@ -3,12 +3,13 @@ history.
 
 Volatility of a model mix is the standard deviation of its monthly
 returns over the longest window every proxy ETF shares, times the square
-root of twelve.  A level's loss-tolerance band is that level's worst
-calendar-year loss on the 2008/2020/2022 replays, rounded to the nearest
-whole percent.  ``python -m cpb.calibrate`` prints both tables;
-``allocation.MODEL_VOLATILITY`` and ``profile.LOSS_TOLERANCE_BANDS``
-must match them, and tests enforce the match so the constants cannot
-drift from the data.
+root of twelve.  A level's worst-year loss is what its mix lost in its
+worst calendar year on the 2008/2020/2022 replays, rounded to the nearest
+whole percent; a client must tolerate at least that to hold the level.
+``python -m cpb.calibrate`` prints both tables;
+``allocation.MODEL_VOLATILITY`` and ``profile.WORST_YEAR_LOSS`` must
+match them, and tests enforce the match so the constants cannot drift
+from the data.
 """
 
 from __future__ import annotations
@@ -28,8 +29,6 @@ from .proxies import (
     load_proxies,
 )
 from .stress import portfolio_returns, replay_scenarios
-
-CAPPED_LEVELS = (1, 2, 3, 4)  # level 5 has no loss cap
 
 
 def historical_volatility(
@@ -53,20 +52,19 @@ def model_volatilities(closes: pd.DataFrame | None = None, digits: int = 4) -> d
     }
 
 
-def loss_tolerance_bands(
+def worst_year_losses(
     daily: pd.DataFrame | None = None,
     monthly: pd.DataFrame | None = None,
-) -> tuple[tuple[float, int], ...]:
-    """Each capped level's band: its worst calendar-year loss on the
-    replays, as a positive fraction rounded to the nearest whole percent."""
+) -> dict[int, float]:
+    """Each level's worst calendar-year loss on the replays, as a positive
+    fraction rounded to the nearest whole percent."""
     daily = load_daily_proxies() if daily is None else daily
     monthly = load_proxies() if monthly is None else monthly
-    bands = []
-    for level in CAPPED_LEVELS:
-        table = replay_scenarios(MODEL_PORTFOLIOS[level], daily, monthly)
-        worst = float(table["calendar_year_return"].min())
-        bands.append((round(-worst, 2), level))
-    return tuple(bands)
+    losses = {}
+    for level, weights in MODEL_PORTFOLIOS.items():
+        table = replay_scenarios(weights, daily, monthly)
+        losses[level] = round(-float(table["calendar_year_return"].min()), 2)
+    return losses
 
 
 if __name__ == "__main__":  # pragma: no cover
@@ -78,4 +76,4 @@ if __name__ == "__main__":  # pragma: no cover
         print(f"    {level}: {vol},")
     print("}")
     print("# worst calendar-year loss per level on the 2008/2020/2022 replays, whole percent")
-    print(f"LOSS_TOLERANCE_BANDS = {loss_tolerance_bands(monthly=closes)}")
+    print(f"WORST_YEAR_LOSS = {worst_year_losses(monthly=closes)}")
