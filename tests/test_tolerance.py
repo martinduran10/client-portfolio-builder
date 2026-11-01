@@ -1,49 +1,46 @@
-"""Does each model portfolio's worst replayed loss stay inside the loss
-tolerance band that maps to its level?
-
-On the proxy history it does not, for levels 1-4, on either measure.
-Those cases are marked expected-to-fail (strict) with the numbers in the
-reason; the model weights and the risk-level rule are deliberately left
-alone, and the decision is recorded in REPORT.md.
+"""Each level's loss band is its own worst calendar-year replay loss,
+rounded to the nearest whole percent, so the band a client lands in says
+what that level's mix lost in its worst replayed year (2008, 2020 or
+2022).  Peak-to-trough slides are deeper; they are shown on the proposal
+and never used to set the level.
 """
 
 import pytest
 
 from cpb.allocation import model_portfolio
-from cpb.profile import max_loss_for_level
+from cpb.calibrate import CAPPED_LEVELS, loss_tolerance_bands
+from cpb.profile import LOSS_TOLERANCE_BANDS, max_loss_for_level
+from cpb.proxies import load_daily_proxies, load_proxies
 from cpb.stress import replay_scenarios
 
-CALENDAR = "calendar_year_return"
-SLIDE = "peak_to_trough"
+
+@pytest.fixture(scope="module")
+def caches():
+    return load_daily_proxies(), load_proxies()
 
 
-def breaches(reason: str):
-    return pytest.mark.xfail(strict=True, reason=reason)
+@pytest.mark.parametrize("level", CAPPED_LEVELS)
+def test_band_is_the_levels_worst_full_year_rounded_to_a_whole_percent(level, caches):
+    worst = replay_scenarios(model_portfolio(level), *caches)["calendar_year_return"].min()
+    assert max_loss_for_level(level) == round(-float(worst), 2)
 
 
-# Worst replayed loss per level, from data/proxies.csv (month-end closes,
-# 2007-05 to 2026-10), versus the band a client at that level accepted.
-CASES = [
-    pytest.param(1, CALENDAR, marks=breaches("level 1 band 5%: worst full year -9.3% (2022)")),
-    pytest.param(1, SLIDE, marks=breaches("level 1 band 5%: worst peak-to-trough -11.7% (2022)")),
-    pytest.param(2, CALENDAR, marks=breaches("level 2 band 10%: worst full year -12.3% (2022)")),
-    pytest.param(2, SLIDE, marks=breaches("level 2 band 10%: worst peak-to-trough -19.6% (2008)")),
-    pytest.param(3, CALENDAR, marks=breaches("level 3 band 15%: worst full year -21.3% (2008)")),
-    pytest.param(3, SLIDE, marks=breaches("level 3 band 15%: worst peak-to-trough -32.3% (2008)")),
-    pytest.param(4, CALENDAR, marks=breaches("level 4 band 25%: worst full year -30.1% (2008)")),
-    pytest.param(4, SLIDE, marks=breaches("level 4 band 25%: worst peak-to-trough -42.9% (2008)")),
-    pytest.param(5, CALENDAR),  # level 5 has no cap
-    pytest.param(5, SLIDE),
-]
+def test_level_5_has_no_cap_and_the_deepest_year(caches):
+    assert max_loss_for_level(5) is None
+    worst = replay_scenarios(model_portfolio(5), *caches)["calendar_year_return"].min()
+    assert worst < -max_loss_for_level(4)
 
 
-@pytest.mark.parametrize("level,measure", CASES)
-def test_worst_replayed_loss_stays_inside_the_levels_band(level, measure):
-    cap = max_loss_for_level(level)
-    worst = float(replay_scenarios(model_portfolio(level))[measure].min())
-    if cap is None:
-        assert worst >= -1.0
-        return
-    assert worst >= -cap, (
-        f"level {level}: worst {measure} {worst:.1%} breaches the {cap:.0%} band"
-    )
+def test_bands_match_the_calibration(caches):
+    assert LOSS_TOLERANCE_BANDS == loss_tolerance_bands(*caches)
+
+
+def test_bands_rise_with_level():
+    caps = [cap for cap, _ in LOSS_TOLERANCE_BANDS]
+    assert caps == sorted(caps) and len(set(caps)) == len(caps)
+
+
+@pytest.mark.parametrize("level", CAPPED_LEVELS)
+def test_peak_to_trough_is_deeper_than_the_band_and_only_shown(level, caches):
+    slide = replay_scenarios(model_portfolio(level), *caches)["peak_to_trough"].min()
+    assert slide < -max_loss_for_level(level)

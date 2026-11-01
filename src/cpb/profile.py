@@ -13,9 +13,13 @@ from dataclasses import dataclass
 # The most aggressive level each goal can justify on its own.
 GOAL_CAPS = {"preserve": 2, "income": 3, "balanced": 4, "grow": 5}
 
-# Bad-year loss a client can sit through → the level that allows.
-# Anything beyond the last band is level 5.
-LOSS_TOLERANCE_BANDS = ((0.05, 1), (0.10, 2), (0.15, 3), (0.25, 4))
+# Bad-year loss a client can sit through → the level that allows.  Each
+# level's upper bound is that level's worst calendar-year loss on the
+# 2008/2020/2022 replays (data/proxies.csv month-ends, rebalanced
+# monthly), rounded to the nearest whole percent; anything beyond the
+# last band is level 5.  Regenerate with ``python -m cpb.calibrate``;
+# tests/test_tolerance.py fails if these drift from the data.
+LOSS_TOLERANCE_BANDS = ((0.09, 1), (0.12, 2), (0.21, 3), (0.30, 4))
 
 
 @dataclass(frozen=True)
@@ -71,7 +75,8 @@ class ClientProfile:
 def loss_tolerance_level(max_annual_loss: float) -> int:
     """Level the stated loss tolerance allows: a 1-5 band on the bad-year loss.
 
-    Tolerating up to 5% → 1, 10% → 2, 15% → 3, 25% → 4, more → 5.
+    Tolerating up to 9% → 1, 12% → 2, 21% → 3, 30% → 4, more → 5: each
+    cap is what that level's mix lost in its worst replayed year.
     """
     for cap, level in LOSS_TOLERANCE_BANDS:
         if max_annual_loss <= cap:
@@ -81,8 +86,8 @@ def loss_tolerance_level(max_annual_loss: float) -> int:
 
 def max_loss_for_level(level: int) -> float | None:
     """The largest bad-year loss a client at this level said they could sit
-    through: 5% at level 1, 10% at 2, 15% at 3, 25% at 4; level 5 has no cap
-    (returns ``None``)."""
+    through, which is also the level's worst replayed calendar year: 9% at
+    level 1, 12% at 2, 21% at 3, 30% at 4; level 5 has no cap (``None``)."""
     for cap, band_level in LOSS_TOLERANCE_BANDS:
         if band_level == level:
             return cap

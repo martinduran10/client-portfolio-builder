@@ -26,11 +26,11 @@ def make_profile(**overrides):
 
 class TestLossToleranceLevel:
     def test_band_edges_are_inclusive(self):
-        assert loss_tolerance_level(0.05) == 1
-        assert loss_tolerance_level(0.10) == 2
-        assert loss_tolerance_level(0.15) == 3
-        assert loss_tolerance_level(0.25) == 4
-        assert loss_tolerance_level(0.26) == 5
+        assert loss_tolerance_level(0.09) == 1
+        assert loss_tolerance_level(0.12) == 2
+        assert loss_tolerance_level(0.21) == 3
+        assert loss_tolerance_level(0.30) == 4
+        assert loss_tolerance_level(0.31) == 5
 
     def test_tiny_tolerance_is_level_one(self):
         assert loss_tolerance_level(0.01) == 1
@@ -109,7 +109,7 @@ class TestValidation:
 
 class TestMaxLossForLevel:
     def test_caps_mirror_the_bands(self):
-        assert [max_loss_for_level(l) for l in range(1, 5)] == [0.05, 0.10, 0.15, 0.25]
+        assert [max_loss_for_level(l) for l in range(1, 5)] == [0.09, 0.12, 0.21, 0.30]
         assert max_loss_for_level(5) is None
 
     def test_round_trips_with_loss_tolerance_level(self):

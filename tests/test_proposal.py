@@ -93,3 +93,10 @@ def test_currency_is_a_stress_not_a_drift(pieces):
     assert "If the COP weakened 20%" in html
     assert "No currency drift is built into" in html
     assert "expected to slide" not in html
+
+
+def test_risk_section_states_the_band_and_the_2008_slide(pieces):
+    html = render_proposal(**pieces)
+    assert "worst year on record for this level's mix lost 21%" in html
+    slide = -pieces["scenarios"].loc["2008 global financial crisis", "peak_to_trough"]
+    assert f"In a crisis like 2008, this portfolio fell {slide * 100:.1f}% from peak to trough." in html

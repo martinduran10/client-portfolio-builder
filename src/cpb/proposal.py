@@ -14,7 +14,7 @@ import pandas as pd
 
 from .allocation import MODEL_NAMES
 from .implementation import ETF_NAMES
-from .profile import ClientProfile
+from .profile import ClientProfile, max_loss_for_level
 
 _CSS = """
 @page { size: A4; margin: 18mm; }
@@ -93,6 +93,20 @@ def render_proposal(
         for name, row in scenarios.iterrows()
     )
 
+    band = max_loss_for_level(level)
+    band_note = (
+        f"Loss tolerance is matched to full calendar years: the worst year on "
+        f"record for this level's mix lost {_pct(band, 0)} (replayed 2008, 2020 "
+        f"and 2022). " if band is not None else
+        "Loss tolerance is matched to full calendar years; this level has no cap. "
+    )
+    crisis = "2008 global financial crisis"
+    crisis_note = (
+        f"In a crisis like 2008, this portfolio fell "
+        f"{_pct(-scenarios.loc[crisis, 'peak_to_trough'])} from peak to trough."
+        if crisis in scenarios.index else ""
+    )
+
     dd_start = pd.Timestamp(drawdown["window_start"]).strftime("%b %Y")
     dd_end = pd.Timestamp(drawdown["window_end"]).strftime("%b %Y")
     dd = float(drawdown["max_drawdown"])
@@ -128,6 +142,7 @@ is expected to offset its slide.</p>
 what the client's stated tolerance for a {_pct(profile.max_annual_loss, 0)}
 bad-year loss, the {profile.horizon_years:.0f}-year horizon, and the
 "{profile.goal}" goal each allow.</p>
+<p>{band_note}{crisis_note}</p>
 
 <h2>Recommended portfolio</h2>
 <table>
