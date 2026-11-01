@@ -33,8 +33,7 @@ def pieces():
         target_usd=10_000_000,
         miss_probability=0.47,
         n_paths=10_000,
-        fx={"offshore_usd": 3_000_000, "onshore_usd": 2_000_000, "depreciation": 0.20,
-            "expected_depreciation": 0.05, "mix_return": 0.0504},
+        fx={"offshore_usd": 3_000_000, "onshore_usd": 2_000_000, "depreciation": 0.20},
         as_of=date(2026, 10, 31),
     )
 
@@ -89,8 +88,8 @@ def test_drawdown_line_shows_the_worst_slide(pieces):
     assert "May 2007 to" in html
 
 
-def test_return_line_explains_the_currency_slide(pieces):
+def test_currency_is_a_stress_not_a_drift(pieces):
     html = render_proposal(**pieces)
-    assert "5.0% a year the COP is expected to slide on the 40% held onshore" in html
-    del pieces["fx"]["mix_return"]
-    assert "expected to slide" not in render_proposal(**pieces)
+    assert "If the COP weakened 20%" in html
+    assert "No currency drift is built into" in html
+    assert "expected to slide" not in html

@@ -3,7 +3,6 @@
 import pytest
 
 from cpb.fx import (
-    blended_expected_return,
     custody_split,
     expected_depreciation,
     fx_stress,
@@ -56,15 +55,3 @@ class TestFxStress:
         with pytest.raises(ValueError):
             fx_stress(0.4, -0.1)
 
-
-class TestBlendedExpectedReturn:
-    def test_onshore_slice_gives_up_the_expected_slide(self):
-        # 5% mix return, 40% onshore, COP 9% vs USD 4% → 5% - 0.4 × 5% = 3%.
-        assert blended_expected_return(0.05, 0.40, 0.09, 0.04) == pytest.approx(0.03)
-
-    def test_all_offshore_is_untouched(self):
-        assert blended_expected_return(0.05, 0.0, 0.09, 0.04) == pytest.approx(0.05)
-
-    def test_rejects_bad_share(self):
-        with pytest.raises(ValueError):
-            blended_expected_return(0.05, 1.5, 0.09, 0.04)

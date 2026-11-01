@@ -1,10 +1,12 @@
 """The local-currency slice for a LATAM client, in dollar terms.
 
-Four plain rules: the onshore slice is worth its USD value at today's
+Three plain rules: the onshore slice is worth its USD value at today's
 spot; a currency paying higher rates than the dollar is expected to
-weaken by roughly the rate difference each year; the onshore slice's
-expected return in dollars is the mix's return less that slide; and if
-the currency drops X%, the portfolio drops X% times the onshore share.
+weaken by roughly the rate difference each year, so the extra interest
+and the expected slide cancel and the slice is modelled in dollars with
+no expected currency drift; and if the currency drops X%, the portfolio
+drops X% times the onshore share, which is shown as a stress, not as an
+expectation.
 """
 
 from __future__ import annotations
@@ -33,18 +35,6 @@ def usd_return_of_local_asset(
     """What a local-currency return is worth in dollars: the local return
     minus the currency's expected slide."""
     return local_return - expected_depreciation(local_rate, usd_rate)
-
-
-def blended_expected_return(
-    mix_return: float, onshore_share: float, local_rate: float, usd_rate: float
-) -> float:
-    """Dollar return of the whole portfolio: the offshore slice earns the
-    mix's return, the onshore slice earns it less the currency's expected
-    slide, and the two are blended by their shares."""
-    if not 0 <= onshore_share <= 1:
-        raise ValueError("onshore_share must be a fraction in [0, 1]")
-    onshore = usd_return_of_local_asset(mix_return, local_rate, usd_rate)
-    return (1.0 - onshore_share) * mix_return + onshore_share * onshore
 
 
 def fx_stress(onshore_share: float, depreciation: float) -> float:

@@ -73,9 +73,8 @@ def render_proposal(
     ``drawdown`` is ``stress.historical_drawdown`` for the same mix.
     ``expected_return`` is the number the Monte Carlo used and ``n_paths``
     how many futures it drew.  ``fx``, when given, carries ``onshore_usd``,
-    ``offshore_usd``, the ``depreciation`` used for the currency stress
-    line, and optionally ``mix_return`` (the return before the currency
-    slide) with ``expected_depreciation`` (the slide per year).
+    ``offshore_usd`` and the ``depreciation`` used for the currency stress
+    line; the onshore slice carries no expected currency drift.
     """
     as_of = as_of or date.today()
 
@@ -94,15 +93,6 @@ def render_proposal(
         for name, row in scenarios.iterrows()
     )
 
-    return_note = "from long-run building blocks nudged for today's valuations"
-    if fx is not None and "mix_return" in fx and "expected_depreciation" in fx:
-        return_note = (
-            f"in dollars: {_pct(fx['mix_return'])} from long-run building blocks "
-            f"nudged for today's valuations, less the {_pct(fx['expected_depreciation'])} "
-            f"a year the {profile.local_currency} is expected to slide on the "
-            f"{_pct(profile.onshore_share, 0)} held onshore"
-        )
-
     dd_start = pd.Timestamp(drawdown["window_start"]).strftime("%b %Y")
     dd_end = pd.Timestamp(drawdown["window_end"]).strftime("%b %Y")
     dd = float(drawdown["max_drawdown"])
@@ -116,7 +106,9 @@ def render_proposal(
 {_usd(fx['onshore_usd'])} onshore in {profile.local_currency}.
 If the {profile.local_currency} weakened {_pct(fx['depreciation'], 0)},
 the whole portfolio would be worth about {_pct(hit)} less in dollars
-({_usd(profile.total_assets_usd * hit)}).</p>
+({_usd(profile.total_assets_usd * hit)}). No currency drift is built into
+the return estimate: the extra interest the {profile.local_currency} pays
+is expected to offset its slide.</p>
 """
 
     return f"""<!DOCTYPE html>
@@ -143,7 +135,7 @@ bad-year loss, the {profile.horizon_years:.0f}-year horizon, and the
 {holding_rows}
 </table>
 <p>Estimated return over the next ten years: <strong>{_pct(expected_return)}</strong>
-a year, {return_note}.</p>
+a year, from long-run building blocks nudged for today's valuations.</p>
 
 <h2>If history repeated</h2>
 <table>
