@@ -40,15 +40,16 @@ print("\nHoldings:")
 print(holdings.to_string(index=False))
 
 # --- 4. Stress: three bad episodes and the worst slide on record -------------
-monthly = proxies.load_proxies()  # cached month-end closes of the proxy ETFs
-scenarios = stress.replay_scenarios(weights, monthly)
+daily = proxies.load_daily_proxies()  # cached closes of the proxy ETFs
+monthly = proxies.load_proxies()
+scenarios = stress.replay_scenarios(weights, daily, monthly)
 print("\nIf history repeated (full year / peak to trough):")
 for name, row in scenarios.iterrows():
     print(f"  {name}: {row.calendar_year_return:.1%} / {row.peak_to_trough:.1%} "
           f"({row.peak_to_trough * profile.total_assets_usd:,.0f} USD)")
 
-drawdown = stress.historical_drawdown(weights, monthly)
-print(f"Worst month-end slide of this mix, {drawdown['window_start']:%b %Y} to "
+drawdown = stress.historical_drawdown(weights, daily)
+print(f"Worst slide of this mix, {drawdown['window_start']:%b %Y} to "
       f"{drawdown['window_end']:%b %Y}: {drawdown['max_drawdown']:.1%}")
 
 closes_path = Path(__file__).resolve().parents[1] / "data" / "closes.csv"

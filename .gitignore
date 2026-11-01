@@ -226,3 +226,4 @@ data/*.parquet
 # Generated proposals
 examples/output/
 !data/proxies.csv
+!data/proxies_daily.csv

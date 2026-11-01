@@ -1,10 +1,13 @@
 # Data
 
-## `proxies.csv` (committed)
+## `proxies_daily.csv` and `proxies.csv` (committed)
 
-Month-end adjusted closes (dividends reinvested) for the ETF proxies
-behind each asset class, from Yahoo Finance via `yfinance`. The cache is
-what tests, CI and the worked example read; nothing needs the network.
+Adjusted closes (dividends reinvested) for the ETF proxies behind each
+asset class, from Yahoo Finance via `yfinance`. The daily file holds
+every trading day and feeds the scenario replays and drawdowns; the
+monthly file holds each month's last close (derived from the daily file)
+and feeds the volatility table and the Monte Carlo. Both caches are what
+tests, CI and the worked example read; nothing needs the network.
 
 | Ticker | Stands for | First month-end |
 |---|---|---|
@@ -24,8 +27,8 @@ pip install -e ".[data]"
 python -m cpb.proxies
 ```
 
-The loader keeps each month's last daily close, drops a month still in
-progress, and rounds to four decimals.
+One download writes both files: daily closes rounded to four decimals,
+then each month's last close, dropping a month still in progress.
 
 ## `closes.csv` (not committed)
 

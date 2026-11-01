@@ -143,9 +143,9 @@ a year, from long-run building blocks nudged for today's valuations.</p>
 <th class="num">Peak to trough, dollars</th></tr>
 {scenario_rows}
 </table>
-<p class="meta">Replayed on the month-end history of one ETF per asset class.
+<p class="meta">Replayed on the daily history of one ETF per asset class.
 "Full year" is the calendar-year return; "peak to trough" is the worst
-month-end-to-month-end slide inside the window shown.</p>
+close-to-close slide inside the window shown.</p>
 <p>Worst slide of this mix on the same history, {dd_start} to {dd_end}:
 <strong class="{_sign(dd)}">{_pct(dd)}</strong> peak to trough
 ({_usd(profile.total_assets_usd * dd)}).</p>
@@ -156,8 +156,8 @@ month-end-to-month-end slide inside the window shown.</p>
 after {profile.horizon_years:.0f} years.</p>
 {fx_section}
 <p class="footer">Return estimates are long-run assumptions, not promises.
-Scenario figures replay past episodes on month-end data, which understates
-slides that began and ended inside a month, and do not predict the next one.
+Scenario figures replay past episodes on daily ETF prices and do not predict
+the next one.
 For discussion purposes only.</p>
 </body>
 </html>

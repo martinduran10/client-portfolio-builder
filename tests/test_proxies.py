@@ -6,18 +6,46 @@ import pytest
 from cpb.allocation import ASSET_CLASSES
 from cpb.proxies import (
     PROXIES_CSV,
+    PROXIES_DAILY_CSV,
     PROXY_MAP,
     PROXY_TICKERS,
     common_closes,
     common_window,
+    load_daily_proxies,
     load_proxies,
     monthly_returns,
+    to_month_ends,
 )
 
 
 @pytest.fixture(scope="module")
 def closes():
     return load_proxies()
+
+
+@pytest.fixture(scope="module")
+def daily():
+    return load_daily_proxies()
+
+
+class TestDailyCache:
+    def test_daily_cache_is_committed_with_every_ticker(self, daily):
+        assert PROXIES_DAILY_CSV.exists()
+        assert list(daily.columns) == list(PROXY_TICKERS)
+        assert daily.index.is_monotonic_increasing and daily.index.is_unique
+
+    def test_trading_days_only(self, daily):
+        assert (daily.index.day_of_week < 5).all()
+        assert len(daily) > 8_000
+
+    def test_month_ends_are_the_last_rows_of_each_month_in_the_daily_file(self, daily, closes):
+        derived = to_month_ends(daily)
+        pd.testing.assert_frame_equal(derived, closes, check_freq=False)
+
+    def test_common_window_starts_on_bils_first_close(self, daily):
+        start, end = common_window(daily)
+        assert start == pd.Timestamp("2007-05-30")
+        assert end == daily.index[-1]
 
 
 class TestCache:

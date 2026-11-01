@@ -1,6 +1,11 @@
 """Stress tests a banker can narrate: replay three bad episodes on the
-proxy ETF history, measure the worst month-end slide, and count the
-simulated futures that miss the goal.
+proxy ETFs' daily history, measure the worst slide on record, and count
+the simulated futures that miss the goal.
+
+Peak-to-trough slides use daily closes (``data/proxies_daily.csv``).
+Calendar-year returns, like the volatility table and the Monte Carlo,
+use month-ends (``data/proxies.csv``), so a replayed year is the mix
+rebalanced monthly rather than every day.
 """
 
 from __future__ import annotations
@@ -9,10 +14,10 @@ import numpy as np
 import pandas as pd
 
 from .implementation import ticker_weights
-from .proxies import PROXY_MAP, common_closes, load_proxies
+from .proxies import PROXY_MAP, common_closes, load_daily_proxies, load_proxies
 
 # Each episode reports two numbers: the full calendar-year return, and the
-# peak-to-trough slide inside a window of month-ends (inclusive).
+# peak-to-trough slide inside a window of whole months (inclusive).
 # Simulated futures in the goal-miss count; the proposal prints the number
 # actually used, so pass the same value to both.
 DEFAULT_N_PATHS = 10_000
@@ -48,25 +53,27 @@ def _month_end(label: str) -> pd.Timestamp:
 
 
 def window_returns(returns: pd.Series, start: str, end: str) -> pd.Series:
-    """The monthly returns from ``start`` to ``end`` inclusive, given as
-    ``"YYYY-MM"``; the first month's return is measured from the month-end
-    before the window."""
-    window = returns.loc[_month_end(start):_month_end(end)]
+    """The returns dated inside the months ``start`` to ``end`` inclusive,
+    given as ``"YYYY-MM"``; the first return is measured from the last
+    close before the window, so a fall on day one counts."""
+    window = returns.loc[pd.Timestamp(start):_month_end(end)]
     if window.empty:
         raise ValueError(f"no returns between {start} and {end}")
     return window
 
 
 def calendar_year_return(returns: pd.Series, year: int) -> float:
-    """Compounded return over the twelve months of ``year``."""
-    months = returns.loc[str(year)]
-    if len(months) != 12:
-        raise ValueError(f"{year} has {len(months)} months of returns, need 12")
-    return float((1.0 + months).prod() - 1.0)
+    """Compounded return over ``year``, which must have returns in all
+    twelve months (daily or monthly data both work)."""
+    year_returns = returns.loc[str(year)]
+    months = year_returns.index.month.nunique() if len(year_returns) else 0
+    if months != 12:
+        raise ValueError(f"{year} has returns in {months} months, need 12")
+    return float((1.0 + year_returns).prod() - 1.0)
 
 
 def peak_to_trough(returns: pd.Series, start: str, end: str) -> float:
-    """Worst slide inside the window, from the month-end before it starts."""
+    """Worst slide inside the window, from the last close before it starts."""
     return max_drawdown(window_returns(returns, start, end))
 
 
@@ -78,50 +85,52 @@ def _proxy_weights(weights: dict[str, float], proxy_map: dict[str, str] | None) 
     return ticker_weights(weights, proxy_map)
 
 
-def replay_scenarios(
-    weights: dict[str, float],
-    closes: pd.DataFrame | None = None,
-    proxy_map: dict[str, str] | None = None,
-) -> pd.DataFrame:
-    """If each episode happened again, what the mix would do: one row per
-    scenario with the calendar-year return and the peak-to-trough slide,
-    replayed on the proxy ETFs' month-end history."""
-    closes = load_proxies() if closes is None else closes
-    returns = portfolio_returns(_proxy_weights(weights, proxy_map), closes)
+def _scenario_rows(daily_returns: pd.Series, monthly_returns: pd.Series) -> list[dict]:
     rows = []
     for name, spec in SCENARIO_WINDOWS.items():
         start, end = spec["window"]
         rows.append({
             "scenario": name,
             "calendar_year": spec["calendar_year"],
-            "calendar_year_return": calendar_year_return(returns, spec["calendar_year"]),
+            "calendar_year_return": calendar_year_return(monthly_returns, spec["calendar_year"]),
             "window_start": start,
             "window_end": end,
-            "peak_to_trough": peak_to_trough(returns, start, end),
+            "peak_to_trough": peak_to_trough(daily_returns, start, end),
         })
+    return rows
+
+
+def replay_scenarios(
+    weights: dict[str, float],
+    daily: pd.DataFrame | None = None,
+    monthly: pd.DataFrame | None = None,
+    proxy_map: dict[str, str] | None = None,
+) -> pd.DataFrame:
+    """If each episode happened again, what the mix would do: one row per
+    scenario with the calendar-year return (month-end closes, rebalanced
+    monthly) and the peak-to-trough slide (daily closes, constant weights)."""
+    daily = load_daily_proxies() if daily is None else daily
+    monthly = load_proxies() if monthly is None else monthly
+    tickers = _proxy_weights(weights, proxy_map)
+    rows = _scenario_rows(portfolio_returns(tickers, daily), portfolio_returns(tickers, monthly))
     return pd.DataFrame(rows).set_index("scenario")
 
 
 def asset_class_scenarios(
-    closes: pd.DataFrame | None = None,
+    daily: pd.DataFrame | None = None,
+    monthly: pd.DataFrame | None = None,
     proxy_map: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """The same two numbers for each asset class on its own, so the banker
     can say what every building block did in each episode."""
-    closes = load_proxies() if closes is None else closes
+    daily = load_daily_proxies() if daily is None else daily
+    monthly = load_proxies() if monthly is None else monthly
     proxy_map = proxy_map or PROXY_MAP
     rows = []
     for asset, ticker in proxy_map.items():
-        returns = closes[ticker].pct_change().dropna()
-        for name, spec in SCENARIO_WINDOWS.items():
-            start, end = spec["window"]
-            rows.append({
-                "scenario": name,
-                "asset_class": asset,
-                "ticker": ticker,
-                "calendar_year_return": calendar_year_return(returns, spec["calendar_year"]),
-                "peak_to_trough": peak_to_trough(returns, start, end),
-            })
+        for row in _scenario_rows(daily[ticker].pct_change().dropna(),
+                                  monthly[ticker].pct_change().dropna()):
+            rows.append({"asset_class": asset, "ticker": ticker, **row})
     return pd.DataFrame(rows).set_index(["scenario", "asset_class"])
 
 
@@ -130,9 +139,9 @@ def historical_drawdown(
     closes: pd.DataFrame | None = None,
     proxy_map: dict[str, str] | None = None,
 ) -> dict[str, object]:
-    """Worst month-end slide of the mix over the longest window every proxy
-    shares, with the window's first and last month-end."""
-    closes = common_closes(load_proxies() if closes is None else closes)
+    """Worst daily peak-to-trough slide of the mix over the longest window
+    every proxy shares, with the window's first and last trading day."""
+    closes = common_closes(load_daily_proxies() if closes is None else closes)
     returns = portfolio_returns(_proxy_weights(weights, proxy_map), closes)
     return {
         "max_drawdown": max_drawdown(returns),

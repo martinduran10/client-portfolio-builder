@@ -11,7 +11,6 @@ import pytest
 
 from cpb.allocation import model_portfolio
 from cpb.profile import max_loss_for_level
-from cpb.proxies import load_proxies
 from cpb.stress import replay_scenarios
 
 CALENDAR = "calendar_year_return"
@@ -38,15 +37,10 @@ CASES = [
 ]
 
 
-@pytest.fixture(scope="module")
-def closes():
-    return load_proxies()
-
-
 @pytest.mark.parametrize("level,measure", CASES)
-def test_worst_replayed_loss_stays_inside_the_levels_band(level, measure, closes):
+def test_worst_replayed_loss_stays_inside_the_levels_band(level, measure):
     cap = max_loss_for_level(level)
-    worst = float(replay_scenarios(model_portfolio(level), closes)[measure].min())
+    worst = float(replay_scenarios(model_portfolio(level))[measure].min())
     if cap is None:
         assert worst >= -1.0
         return

@@ -1,12 +1,12 @@
 """Replays checked by hand on synthetic closes and sanity-checked on the
-cached proxy history; drawdown on known paths; sane Monte Carlo odds."""
+cached daily proxy history; drawdown on known paths; sane Monte Carlo odds."""
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from cpb.allocation import model_portfolio
-from cpb.proxies import load_proxies
+from cpb.proxies import load_daily_proxies, load_proxies
 from cpb.stress import (
     SCENARIO_WINDOWS,
     asset_class_scenarios,
@@ -22,6 +22,11 @@ from cpb.stress import (
 
 @pytest.fixture(scope="module")
 def closes():
+    return load_daily_proxies()
+
+
+@pytest.fixture(scope="module")
+def monthly():
     return load_proxies()
 
 
@@ -48,6 +53,18 @@ class TestWindowMathByHand:
     def test_peak_to_trough_ignores_months_outside_the_window(self):
         returns = pd.Series([-0.50, 0.02, 0.03], index=month_ends("2020-01-31", 3))
         assert peak_to_trough(returns, "2020-02", "2020-03") == pytest.approx(0.0)
+
+    def test_daily_window_starts_from_the_last_close_before_it(self):
+        # Daily returns: Jan 31 +1%, Feb 3 -10%, Feb 4 -10%, Mar 2 +5%.
+        idx = pd.to_datetime(["2020-01-31", "2020-02-03", "2020-02-04", "2020-03-02"])
+        returns = pd.Series([0.01, -0.10, -0.10, 0.05], index=idx)
+        assert peak_to_trough(returns, "2020-02", "2020-03") == pytest.approx(-0.19)
+
+    def test_calendar_year_accepts_daily_data(self):
+        idx = pd.bdate_range("2022-01-03", "2022-12-30")
+        returns = pd.Series(0.0, index=idx)
+        returns.iloc[0] = 0.10
+        assert calendar_year_return(returns, 2022) == pytest.approx(0.10)
 
     def test_empty_window_is_rejected(self):
         returns = pd.Series([0.01], index=month_ends("2020-01-31", 1))
@@ -90,9 +107,32 @@ class TestReplayOnProxies:
 
     def test_historical_drawdown_spans_the_common_window(self, closes):
         out = historical_drawdown(model_portfolio(3), closes)
-        assert out["window_start"] == pd.Timestamp("2007-05-31")
+        assert out["window_start"] == pd.Timestamp("2007-05-30")  # BIL's first close
         assert out["window_end"] == closes.index[-1]
         assert -0.60 < out["max_drawdown"] < -0.10
+
+    def test_daily_slide_is_at_least_as_deep_as_the_month_end_one(self, closes, monthly):
+        from cpb.implementation import ticker_weights
+        from cpb.proxies import PROXY_MAP
+
+        weights = model_portfolio(3)
+        daily_slides = replay_scenarios(weights, closes, monthly)["peak_to_trough"]
+        month_end_returns = portfolio_returns(ticker_weights(weights, PROXY_MAP), monthly)
+        for name, spec in SCENARIO_WINDOWS.items():
+            month_end_slide = peak_to_trough(month_end_returns, *spec["window"])
+            assert daily_slides[name] <= month_end_slide + 1e-9
+        assert daily_slides["2020 covid crash"] < -0.15  # month-ends only see about -10%
+
+    def test_full_year_comes_from_month_ends(self, closes, monthly):
+        from cpb.implementation import ticker_weights
+        from cpb.proxies import PROXY_MAP
+
+        weights = model_portfolio(3)
+        table = replay_scenarios(weights, closes, monthly)
+        month_end_returns = portfolio_returns(ticker_weights(weights, PROXY_MAP), monthly)
+        assert table.loc["2008 global financial crisis", "calendar_year_return"] == pytest.approx(
+            calendar_year_return(month_end_returns, 2008)
+        )
 
 
 class TestPortfolioReturns:
