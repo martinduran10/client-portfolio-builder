@@ -184,3 +184,118 @@ blended return and the old volatility they are 80.2%.
 8. **Pinned or live volatility.** The table is pinned constants checked
    by a test; computing it on every call would track data refreshes
    silently instead.
+
+---
+
+# Follow-up: three fixes (2026-11-01)
+
+Three more commits on `sourced-data`, one per fix, then this append.
+Final run: 121 passed, 0 expected failures. The Bogotá example ran
+clean and rewrote `examples/output/bogota_family.html` (still
+gitignored). Not merged.
+
+## Fix 1: no expected currency drift (`4c6b226`)
+
+`fx.blended_expected_return` is removed. The onshore 40% is modelled in
+dollars: the extra interest COP pays is expected to offset its expected
+slide (interest-rate carry), so subtracting the slide alone double
+counted. The return estimate and the Monte Carlo use the mix's return;
+the 20% COP shock stays on the proposal as a stress line, now with a
+sentence saying no drift is built into the return. `expected_depreciation`
+and `usd_return_of_local_asset` remain as rules for a local-currency
+asset; the example no longer passes rates. DECISIONS.md section 5
+rewritten with the reason.
+
+| Output (Bogotá, level 3) | Before | After |
+|---|---|---|
+| Expected return fed to the Monte Carlo | 3.03% | 5.04% |
+| Odds of ending below $10M in 15 years | 80% | 52% |
+| Proposal return line | "in dollars: 5.0% ... less the 5.0% a year the COP is expected to slide" | "5.0% a year, from long-run building blocks nudged for today's valuations" |
+| Currency section | 20% shock | 20% shock plus "No currency drift is built into the return estimate" |
+
+## Fix 2: peak-to-trough from daily closes (`56b0e5e`)
+
+One download now writes `data/proxies_daily.csv` (488 KB, 8,497 trading
+days, 1993-01-29 to 2026-10-30) and derives `data/proxies.csv` from it.
+Peak-to-trough slides and the worst slide on record use the daily file.
+Calendar-year returns stay on month-ends, as do the volatility table and
+the Monte Carlo: a replayed year is the mix rebalanced monthly, which is
+what the volatility is measured on. On daily closes with daily
+rebalancing the 2008 full year for level 3 would read -19.5% instead of
+-21.3%, a rebalancing artefact rather than a market fact, so I kept the
+month-end figure for the number that sets the bands.
+
+Re-downloading moved 321 cells of the monthly cache in the fourth
+decimal (Yahoo's adjustment arithmetic); the volatility table did not
+move at four decimals and its pinned test still passes.
+
+Peak-to-trough per model portfolio, month-ends → daily:
+
+| Level | 2008 | 2020 | 2022 | Worst on record |
+|---|---|---|---|---|
+| 1 | -6.9% → -11.3% | -2.0% → -7.6% | -11.7% → -12.5% | -11.8% → -12.8% |
+| 2 | -19.6% → -21.0% | -6.4% → -13.7% | -16.2% → -16.7% | -19.6% → -21.0% |
+| 3 | -32.3% → -32.9% | -10.6% → -19.4% | -19.5% → -20.0% | -32.3% → -33.3% |
+| 4 | -42.9% → -43.3% | -14.7% → -25.8% | -22.2% → -22.7% | -42.9% → -44.8% |
+| 5 | -52.0% → -52.3% | -18.7% → -31.7% | -24.8% → -25.5% | -52.0% → -54.7% |
+
+Peak-to-trough per asset class, month-ends → daily:
+
+| Asset class | 2008 | 2020 | 2022 |
+|---|---|---|---|
+| us_equity (SPY) | -50.8% → -51.4% | -19.4% → -33.7% | -23.9% → -24.5% |
+| intl_equity (EFA) | -57.4% → -57.6% | -20.8% → -33.4% | -27.2% → -28.7% |
+| em_equity (EEM) | -60.4% → -66.4% | -19.0% → -31.6% | -29.4% → -32.7% |
+| core_bonds (AGG) | -4.3% → -12.8% | -0.5% → -9.6% | -15.5% → -16.6% |
+| short_bonds (SHY) | -1.2% → -2.2% | 0.0% → -0.7% | -4.7% → -5.0% |
+| cash (BIL) | -0.3% → -0.8% | 0.0% → 0.0% | 0.0% → -0.3% |
+
+Full-year returns did not move (still month-ends). The 2008 window ends
+in Feb 2009 by the brief, while the daily trough was 9 March 2009, which
+is why the worst slide on record (-33.3% for level 3) is slightly deeper
+than the 2008 window slide (-32.9%).
+
+## Fix 3: loss bands calibrated to the worst replayed year (a81ecb2)
+
+`profile.LOSS_TOLERANCE_BANDS` is now each level's worst calendar-year
+replay loss rounded to the nearest whole percent, produced by
+`cpb.calibrate.loss_tolerance_bands` and pinned by
+`tests/test_tolerance.py`. Peak-to-trough never sets the level; the
+proposal's risk section now reads, for the Bogotá family, "Loss
+tolerance is matched to full calendar years: the worst year on record
+for this level's mix lost 21% (replayed 2008, 2020 and 2022). In a
+crisis like 2008, this portfolio fell 32.9% from peak to trough."
+
+| Level | Band before | Worst replayed year | Band after |
+|---|---|---|---|
+| 1 | 5% | -9.34% (2022) | 9% |
+| 2 | 10% | -12.25% (2022) | 12% |
+| 3 | 15% | -21.34% (2008) | 21% |
+| 4 | 25% | -30.08% (2008) | 30% |
+| 5 | no cap | -37.89% (2008) | no cap |
+
+The rule (minimum of the three reads, inclusive bands) is unchanged.
+The Bogotá family's 15% tolerance maps to level 3 under both tables, so
+the example's level, mix, holdings, return and odds are unchanged by
+this fix; only the band sentence and the 2008 sentence were added to the
+page. `tests/test_profile.py` band assertions moved to the new values.
+Test count: 111 passed + 8 xfailed → 121 passed, 0 xfailed.
+
+## Decisions still waiting for you
+
+1. **Band direction.** With upper bounds equal to each level's worst
+   year, a client tolerating 13% lands at level 3, whose worst year was
+   -21%; only a client at the top of a band is fully covered. The
+   conservative alternative is to require tolerance ≥ the level's worst
+   year (thresholds 9/12/21/30 become the floors of levels 1-4), under
+   which the Bogotá family would be level 2.
+2. **Rebalancing frequency.** Calendar years use monthly rebalancing,
+   slides use daily; a single convention would need either a
+   monthly-rebalanced daily series or daily-rebalanced years.
+3. **2008 window end.** Ending in Feb 2009 misses the 9 March 2009
+   trough by about half a point at level 3; extending the window to
+   Mar 2009 would align the 2008 slide with the worst on record.
+4. Items 3 to 8 of the earlier list stand: currency volatility, a real
+   onshore sleeve, undated rates and stress size, proxy versus holding
+   tickers, unsourced return estimates and premium, pinned versus live
+   tables.
