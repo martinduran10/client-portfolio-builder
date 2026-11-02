@@ -44,7 +44,7 @@ def test_contains_the_key_facts(pieces):
     html = render_proposal(**pieces)
     assert "Bogotá family" in html
     assert "Level 2" in html
-    assert "Conservative Income" in html
+    assert "Moderately Conservative" in html
     assert "IVV" in html
     assert "$5,000,000" in html
     assert "$10,000,000" in html
@@ -119,7 +119,7 @@ def test_risk_section_warns_when_no_mix_fits(pieces):
 def test_tradeoff_section_compares_the_next_level_up(pieces):
     html = render_proposal(**pieces)
     assert "<h2>Trade-off</h2>" in html
-    assert "Level 2 — Conservative Income <span class='meta'>(recommended)</span>" in html
+    assert "Level 2 — Moderately Conservative <span class='meta'>(recommended)</span>" in html
     assert "Level 3 — Balanced <span class='meta'>(next level up)</span>" in html
     assert "Reaching the goal with higher confidence requires accepting a larger loss in a bad year." in html
     next_up = pieces["tradeoff"].loc[3]

@@ -14,7 +14,7 @@ def table():
 
 def test_two_rows_recommended_then_next_level_up(table):
     assert list(table.index) == [2, 3]
-    assert list(table["name"]) == ["Conservative Income", "Balanced"]
+    assert list(table["name"]) == ["Moderately Conservative", "Balanced"]
 
 
 def test_next_level_up_earns_more_and_loses_more(table):

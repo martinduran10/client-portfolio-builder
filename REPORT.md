@@ -162,7 +162,7 @@ blended return and the old volatility they are 80.2%.
    were set so a level's worst full-year replay never exceeds the
    tolerance that maps to it, the thresholds would be roughly 9%, 12%,
    21% and 30%, and the Bogotá family's 15% would map to level 2
-   (Conservative Income) instead of 3.
+   (Moderately Conservative) instead of 3.
 2. **Daily or monthly replays.** Keeping month-ends understates the 2020
    crash by about 14 points for equities. Caching daily closes would
    cost roughly 750 KB in the repo and give the numbers a banker expects
@@ -330,7 +330,7 @@ Final run: 128 passed.
 The Bogotá family (15% tolerance, 15 years, "grow") moves from level 3
 to level 2; the tolerance still binds, since horizon and goal allow 5.
 
-| Output | Before (level 3, Balanced) | After (level 2, Conservative Income) |
+| Output | Before (level 3, Balanced) | After (level 2, Moderately Conservative) |
 |---|---|---|
 | Mix | US 30, intl 15, EM 10, core 35, short 7, cash 3 | US 20, intl 10, EM 5, core 45, short 15, cash 5 |
 | Largest holding | AGG $1,750,000 | AGG $2,250,000 |
@@ -368,7 +368,7 @@ Trade-off table on the Bogotá page (before: no such section):
 
 | Level | Worst calendar year | 2008 peak to trough | Expected return | Odds of missing the goal |
 |---|---|---|---|---|
-| Level 2 — Conservative Income (recommended) | -12.2% (2022) | -21.0% | 4.55% | 59% |
+| Level 2 — Moderately Conservative (recommended) | -12.2% (2022) | -21.0% | 4.55% | 59% |
 | Level 3 — Balanced (next level up) | -21.3% (2008) | -32.9% | 5.04% | 52% |
 
 Moving up one level buys 0.48% a year of expected return and

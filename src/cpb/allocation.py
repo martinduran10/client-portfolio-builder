@@ -34,11 +34,11 @@ MODEL_PORTFOLIOS = {
 }
 
 MODEL_NAMES = {
-    1: "Capital Preservation",
-    2: "Conservative Income",
+    1: "Conservative",
+    2: "Moderately Conservative",
     3: "Balanced",
     4: "Growth",
-    5: "Aggressive Growth",
+    5: "Aggressive",
 }
 
 # Long-run 10-year annual return estimates per asset class, before any
