@@ -88,3 +88,11 @@ class TestExpectedVolatility:
     def test_rejects_unknown_level(self):
         with pytest.raises(ValueError, match="risk level"):
             expected_volatility(0)
+
+    def test_table_matches_the_proxy_history(self):
+        # The constants in allocation.py are the ones ``cpb.calibrate``
+        # computes from data/proxies.csv; regenerate them if this fails.
+        from cpb.allocation import MODEL_VOLATILITY
+        from cpb.calibrate import model_volatilities
+
+        assert MODEL_VOLATILITY == model_volatilities()

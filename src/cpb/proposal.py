@@ -14,7 +14,7 @@ import pandas as pd
 
 from .allocation import MODEL_NAMES
 from .implementation import ETF_NAMES
-from .profile import ClientProfile
+from .profile import ClientProfile, fits_tolerance, worst_year_loss
 
 _CSS = """
 @page { size: A4; margin: 18mm; }
@@ -43,21 +43,40 @@ def _usd(x: float) -> str:
     return f"${x:,.0f}"
 
 
+def _sign(x: float) -> str:
+    return "neg" if x < 0 else ""
+
+
+def _window(row: pd.Series) -> str:
+    start = pd.Timestamp(row.window_start).strftime("%b %Y")
+    end = pd.Timestamp(row.window_end).strftime("%b %Y")
+    return f"{start}–{end}"
+
+
 def render_proposal(
     profile: ClientProfile,
     level: int,
     holdings: pd.DataFrame,
     expected_return: float,
-    scenarios: dict[str, float],
+    scenarios: pd.DataFrame,
+    drawdown: dict[str, object],
     target_usd: float,
     miss_probability: float,
+    n_paths: int,
+    tradeoff: pd.DataFrame,
     fx: dict[str, float] | None = None,
     as_of: date | None = None,
 ) -> str:
     """Build the one-page HTML proposal from the pieces the other modules made.
 
-    ``fx``, when given, carries ``onshore_usd``, ``offshore_usd`` and the
-    assumed ``depreciation`` used for the currency stress line.
+    ``scenarios`` is the table from ``stress.replay_scenarios``: one row
+    per episode with its calendar-year return and peak-to-trough slide.
+    ``drawdown`` is ``stress.historical_drawdown`` for the same mix.
+    ``expected_return`` is the number the Monte Carlo used and ``n_paths``
+    how many futures it drew.  ``tradeoff`` is ``tradeoff.tradeoff_table``:
+    the recommended level and the next one up.  ``fx``, when given, carries ``onshore_usd``,
+    ``offshore_usd`` and the ``depreciation`` used for the currency stress
+    line; the onshore slice carries no expected currency drift.
     """
     as_of = as_of or date.today()
 
@@ -69,10 +88,54 @@ def render_proposal(
     )
 
     scenario_rows = "\n".join(
-        f"<tr><td>{name}</td><td class='num {'neg' if ret < 0 else ''}'>"
-        f"{_pct(ret)}</td><td class='num'>{_usd(profile.total_assets_usd * ret)}</td></tr>"
-        for name, ret in scenarios.items()
+        f"<tr><td>{name} <span class='meta'>({_window(row)})</span></td>"
+        f"<td class='num {_sign(row.calendar_year_return)}'>{_pct(row.calendar_year_return)}</td>"
+        f"<td class='num {_sign(row.peak_to_trough)}'>{_pct(row.peak_to_trough)}</td>"
+        f"<td class='num'>{_usd(profile.total_assets_usd * row.peak_to_trough)}</td></tr>"
+        for name, row in scenarios.iterrows()
     )
+
+    tolerance = _pct(profile.max_annual_loss, 0)
+    if not fits_tolerance(profile.max_annual_loss):
+        band_note = (
+            f"No model portfolio fits the stated {tolerance} bad-year tolerance: even "
+            f"the most conservative mix lost {_pct(worst_year_loss(1), 0)} in its worst "
+            f"replayed calendar year (2008, 2020 or 2022), so level 1 is shown. "
+        )
+    else:
+        next_up = (
+            f"; the next level up lost {_pct(worst_year_loss(level + 1), 0)}. "
+            if level < 5 else ". "
+        )
+        band_note = (
+            f"A level is held only if its worst replayed calendar year (2008, 2020 or "
+            f"2022) stays inside the client's tolerance: this mix lost "
+            f"{_pct(worst_year_loss(level), 0)} in its worst year, within the {tolerance} "
+            f"the client can sit through{next_up}"
+        )
+    crisis = "2008 global financial crisis"
+    crisis_note = (
+        f"In a crisis like 2008, this portfolio fell "
+        f"{_pct(-scenarios.loc[crisis, 'peak_to_trough'])} from peak to trough."
+        if crisis in scenarios.index else ""
+    )
+
+    def _role(lvl: int) -> str:
+        return "recommended" if lvl == level else "next level up"
+
+    tradeoff_rows = "\n".join(
+        f"<tr><td>Level {lvl} — {row['name']} <span class='meta'>({_role(lvl)})</span></td>"
+        f"<td class='num {_sign(row.worst_year_return)}'>{_pct(row.worst_year_return)} "
+        f"<span class='meta'>({row.worst_year})</span></td>"
+        f"<td class='num {_sign(row.crisis_2008_slide)}'>{_pct(row.crisis_2008_slide)}</td>"
+        f"<td class='num'>{_pct(row.expected_return)}</td>"
+        f"<td class='num'>{_pct(row.miss_probability, 0)}</td></tr>"
+        for lvl, row in tradeoff.iterrows()
+    )
+
+    dd_start = pd.Timestamp(drawdown["window_start"]).strftime("%b %Y")
+    dd_end = pd.Timestamp(drawdown["window_end"]).strftime("%b %Y")
+    dd = float(drawdown["max_drawdown"])
 
     fx_section = ""
     if fx is not None:
@@ -83,7 +146,9 @@ def render_proposal(
 {_usd(fx['onshore_usd'])} onshore in {profile.local_currency}.
 If the {profile.local_currency} weakened {_pct(fx['depreciation'], 0)},
 the whole portfolio would be worth about {_pct(hit)} less in dollars
-({_usd(profile.total_assets_usd * hit)}).</p>
+({_usd(profile.total_assets_usd * hit)}). No currency drift is built into
+the return estimate: the extra interest the {profile.local_currency} pays
+is expected to offset its slide.</p>
 """
 
     return f"""<!DOCTYPE html>
@@ -103,6 +168,7 @@ the whole portfolio would be worth about {_pct(hit)} less in dollars
 what the client's stated tolerance for a {_pct(profile.max_annual_loss, 0)}
 bad-year loss, the {profile.horizon_years:.0f}-year horizon, and the
 "{profile.goal}" goal each allow.</p>
+<p>{band_note}{crisis_note}</p>
 
 <h2>Recommended portfolio</h2>
 <table>
@@ -114,17 +180,33 @@ a year, from long-run building blocks nudged for today's valuations.</p>
 
 <h2>If history repeated</h2>
 <table>
-<tr><th>Episode</th><th class="num">Portfolio</th><th class="num">In dollars</th></tr>
+<tr><th>Episode</th><th class="num">Full year</th><th class="num">Peak to trough</th>
+<th class="num">Peak to trough, dollars</th></tr>
 {scenario_rows}
 </table>
+<p class="meta">Replayed on the daily history of one ETF per asset class.
+"Full year" is the calendar-year return; "peak to trough" is the worst
+close-to-close slide inside the window shown.</p>
+<p>Worst slide of this mix on the same history, {dd_start} to {dd_end}:
+<strong class="{_sign(dd)}">{_pct(dd)}</strong> peak to trough
+({_usd(profile.total_assets_usd * dd)}).</p>
 
 <h2>Odds of missing the goal</h2>
-<p>Across 10,000 simulated futures, this mix ends below the
+<p>Across {n_paths:,} simulated futures, this mix ends below the
 {_usd(target_usd)} target in <strong>{_pct(miss_probability, 0)}</strong> of them
 after {profile.horizon_years:.0f} years.</p>
+
+<h2>Trade-off</h2>
+<table>
+<tr><th>Level</th><th class="num">Worst calendar year</th><th class="num">2008 peak to trough</th>
+<th class="num">Expected return</th><th class="num">Odds of missing the goal</th></tr>
+{tradeoff_rows}
+</table>
+<p>Reaching the goal with higher confidence requires accepting a larger loss in a bad year.</p>
 {fx_section}
 <p class="footer">Return estimates are long-run assumptions, not promises.
-Scenario figures replay past episodes and do not predict the next one.
+Scenario figures replay past episodes on daily ETF prices and do not predict
+the next one.
 For discussion purposes only.</p>
 </body>
 </html>

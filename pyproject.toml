@@ -16,6 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+data = ["yfinance>=0.2"]  # only to refresh data/proxies.csv
 
 [tool.setuptools.packages.find]
 where = ["src"]

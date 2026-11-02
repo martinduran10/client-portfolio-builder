@@ -54,3 +54,4 @@ class TestFxStress:
             fx_stress(1.2, 0.2)
         with pytest.raises(ValueError):
             fx_stress(0.4, -0.1)
+

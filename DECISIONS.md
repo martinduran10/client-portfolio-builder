@@ -1,5 +1,15 @@
 # Where the implementation departs from CLAUDE.md
 
+> **Status on the `sourced-data` branch (2026-10-31).** Section 4 is
+> superseded: the scenario table is now replayed from the cached proxy
+> history (see SOURCES.md section 4 and REPORT.md). Section 6 is
+> resolved: the worst slide on record is on the proposal page. Section
+> 5 is rewritten: the onshore money is the USD mix with no expected
+> currency drift, and the currency is a stress line only. Sections 1,
+> 2, 3 and 7 stand as written; the
+> tolerance finding in section 2 is now measured by
+> `tests/test_tolerance.py` and listed in REPORT.md.
+
 CLAUDE.md gives one line per module and leaves the method open. Each
 section below names a place where the code made a choice the brief did
 not spell out, or went a different way than the brief implies, with the
@@ -86,24 +96,28 @@ mixes definitions: 2008 and 2022 are calendar-year figures while 2020 is
 a five-week slide, and none of the eighteen numbers has been checked
 against the data. A replay would fix both problems at once.
 
-## 5. The onshore COP slice is the same USD portfolio seen through a currency
+## 5. The onshore COP slice is modelled in dollars with no expected currency drift
 
 CLAUDE.md describes "COP exposure on the onshore 40%" and an fx module
 for "the local-currency slice". The implementation allocates the full
-$5M across the six USD ETFs and treats the onshore 40% purely as a
-custody and currency overlay: `custody_split` divides the dollars, and
-`fx_stress` scales a COP drop by the onshore share. No COP asset is
-held, no local return is estimated, and the 5%-a-year expected slide
-that `expected_depreciation` produces is printed by the example but
-never enters the return estimate or the goal-miss odds. The choice kept
-the allocation to one mix, avoided inventing return and scenario figures
-for Colombian assets, and still gave the proposal a currency line. The
-alternative was a second mix for the onshore money (TES, local equity,
-COP cash) with its own return estimates, converted to USD by subtracting
-the expected depreciation, and a Monte Carlo on the blended result. That
-would make the onshore slice a real portfolio rather than a footnote,
-at the cost of a local-asset return table and scenario rows that would
-need their own sources.
+$5M across the six USD ETFs and treats the onshore 40% as a custody
+split plus a currency stress: `custody_split` divides the dollars and
+`fx_stress` scales a 20% COP drop by the onshore share for the proposal.
+No expected depreciation is subtracted from the slice's return or from
+the Monte Carlo drift. The reason is interest-rate carry: a currency
+paying higher rates than the dollar is expected to weaken by roughly the
+rate difference (`expected_depreciation`), so the extra interest the
+onshore money earns and the slide it is expected to suffer cancel, and
+the expected return in dollars is the mix's return whichever currency
+the slice sits in. Subtracting the slide alone, which an earlier commit
+on this branch did, double counts: it takes the depreciation without the
+carry that compensates for it, and it moved the goal-miss odds from 52%
+to 80% on nothing but that asymmetry. What the currency adds is risk,
+not a lower expectation, and the proposal carries it as the 20% shock
+line. The alternative is a real onshore sleeve (TES, local equity, COP
+cash) with its own local return estimates converted at the expected
+slide, which would make the carry explicit on both sides and would need
+a return and scenario row for each local asset class.
 
 ## 6. Max drawdown is computed but never reaches the proposal
 

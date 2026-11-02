@@ -2,14 +2,14 @@
 
 $5M, 60% offshore in Miami, 15-year horizon, goal "grow", tolerates a
 15% loss in a bad year, COP exposure on the onshore 40%.  Runs end to
-end without the Bloomberg data; if ``data/closes.csv`` exists, it also
-reports the mix's worst historical drawdown.
+end on the committed proxy history; if ``data/closes.csv`` exists, it
+also reports the mix's worst daily drawdown on the Bloomberg closes.
 """
 
 from pathlib import Path
 
-from cpb import allocation, data, fx, implementation, stress
-from cpb.profile import ClientProfile, risk_level
+from cpb import allocation, data, fx, implementation, proxies, stress, tradeoff
+from cpb.profile import ClientProfile, risk_level, worst_year_loss
 from cpb.proposal import render_proposal, write_proposal
 
 # --- 1. Profile → risk level -------------------------------------------------
@@ -25,6 +25,8 @@ profile = ClientProfile(
 level = risk_level(profile)
 print(f"Risk level: {level} ({allocation.MODEL_NAMES[level]})")
 print("  The 15% bad-year tolerance binds; horizon and goal would allow more.")
+print(f"  Level {level}'s mix lost {worst_year_loss(level):.0%} in its worst replayed "
+      f"year, inside the 15%; level {level + 1}'s lost {worst_year_loss(level + 1):.0%}.")
 
 # --- 2. Allocation and the 10-year return estimate ---------------------------
 weights = allocation.model_portfolio(level)
@@ -39,47 +41,72 @@ holdings = implementation.to_holdings(weights, profile.total_assets_usd)
 print("\nHoldings:")
 print(holdings.to_string(index=False))
 
-# --- 4. Stress: three bad years, drawdown, goal-miss odds --------------------
-scenarios = stress.run_scenarios(weights)
-print("\nIf history repeated:")
-for name, ret in scenarios.items():
-    print(f"  {name}: {ret:.1%} ({ret * profile.total_assets_usd:,.0f} USD)")
+# --- 4. Stress: three bad episodes and the worst slide on record -------------
+daily = proxies.load_daily_proxies()  # cached closes of the proxy ETFs
+monthly = proxies.load_proxies()
+scenarios = stress.replay_scenarios(weights, daily, monthly)
+print("\nIf history repeated (full year / peak to trough):")
+for name, row in scenarios.iterrows():
+    print(f"  {name}: {row.calendar_year_return:.1%} / {row.peak_to_trough:.1%} "
+          f"({row.peak_to_trough * profile.total_assets_usd:,.0f} USD)")
+
+crisis = scenarios.loc["2008 global financial crisis", "peak_to_trough"]
+print(f"In a crisis like 2008, this portfolio fell {-crisis:.1%} from peak to trough.")
+
+drawdown = stress.historical_drawdown(weights, daily)
+print(f"Worst slide of this mix, {drawdown['window_start']:%b %Y} to "
+      f"{drawdown['window_end']:%b %Y}: {drawdown['max_drawdown']:.1%}")
 
 closes_path = Path(__file__).resolve().parents[1] / "data" / "closes.csv"
 if closes_path.exists():
     closes = data.load_closes(closes_path)
-    returns = stress.portfolio_daily_returns(
-        implementation.ticker_weights(weights), closes
-    )
-    print(f"\nWorst historical drawdown of this mix: {stress.max_drawdown(returns):.1%}")
-else:
-    print("\n(data/closes.csv not found; skipping the historical drawdown)")
-
-target_usd = 10_000_000  # "grow": double the money over the 15 years
-miss = stress.goal_miss_probability(
-    profile.total_assets_usd, target_usd, int(profile.horizon_years), mu, sigma
-)
-print(f"Odds of ending below ${target_usd:,.0f} in 15 years: {miss:.0%}")
+    returns = stress.portfolio_returns(implementation.ticker_weights(weights), closes)
+    print(f"Worst daily slide on the Bloomberg closes: {stress.max_drawdown(returns):.1%}")
 
 # --- 5. FX: the COP slice ----------------------------------------------------
+# The onshore slice is modelled in dollars with no expected currency drift:
+# the extra interest COP pays is expected to offset its slide.  The
+# currency shows up only as a stress.
 split = fx.custody_split(profile.total_assets_usd, profile.offshore_share)
 depreciation = 0.20
 hit = fx.fx_stress(profile.onshore_share, depreciation)
-drift = fx.expected_depreciation(local_rate=0.09, usd_rate=0.04)
 print(f"\nCustody: ${split['offshore_usd']:,.0f} offshore USD, "
       f"${split['onshore_usd']:,.0f} onshore COP")
 print(f"If COP weakens {depreciation:.0%}, the portfolio loses {hit:.1%} in USD")
-print(f"Expected COP slide from rate difference: {drift:.1%} a year")
 
-# --- 6. One-page proposal ----------------------------------------------------
+# --- 6. Odds of missing the goal ---------------------------------------------
+target_usd = 10_000_000  # "grow": double the money over the 15 years
+n_paths = stress.DEFAULT_N_PATHS
+miss = stress.goal_miss_probability(
+    profile.total_assets_usd, target_usd, int(profile.horizon_years),
+    mu, sigma, n_paths=n_paths,
+)
+print(f"\nOdds of ending below ${target_usd:,.0f} in 15 years "
+      f"({n_paths:,} paths): {miss:.0%}")
+
+# --- 7. Trade-off: this level against the next one up -----------------------
+choices = tradeoff.tradeoff_table(
+    level, profile.total_assets_usd, target_usd, int(profile.horizon_years),
+    valuation_premiums=valuation_premiums, daily=daily, monthly=monthly, n_paths=n_paths,
+)
+print("\nTrade-off (worst year / 2008 peak to trough / return / odds of missing):")
+for lvl, row in choices.iterrows():
+    print(f"  Level {lvl} {row['name']}: {row.worst_year_return:.1%} ({row.worst_year}) / "
+          f"{row.crisis_2008_slide:.1%} / {row.expected_return:.2%} / {row.miss_probability:.0%}")
+print("Reaching the goal with higher confidence requires accepting a larger loss in a bad year.")
+
+# --- 8. One-page proposal ----------------------------------------------------
 html = render_proposal(
     profile=profile,
     level=level,
     holdings=holdings,
     expected_return=mu,
     scenarios=scenarios,
+    drawdown=drawdown,
     target_usd=target_usd,
     miss_probability=miss,
+    n_paths=n_paths,
+    tradeoff=choices,
     fx={**split, "depreciation": depreciation},
 )
 out = write_proposal(html, Path(__file__).parent / "output" / "bogota_family.html")

@@ -2,8 +2,11 @@
 
 Three plain rules: the onshore slice is worth its USD value at today's
 spot; a currency paying higher rates than the dollar is expected to
-weaken by roughly the rate difference each year; and if the currency
-drops X%, the portfolio drops X% times the onshore share.
+weaken by roughly the rate difference each year, so the extra interest
+and the expected slide cancel and the slice is modelled in dollars with
+no expected currency drift; and if the currency drops X%, the portfolio
+drops X% times the onshore share, which is shown as a stress, not as an
+expectation.
 """
 
 from __future__ import annotations
